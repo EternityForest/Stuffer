@@ -1,6 +1,6 @@
 import { LitElement, html, css } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
-import { getItem, updateItemProperty, getItemContents } from '../services/storage.js';
+import { getItem, updateItemProperty, getItemContents, getLoadouts, saveObjectAsLoadout, compareContentsToLoadout } from '../services/storage.js';
 import { compressImage } from '../services/imageCompression.js';
 
 @customElement('object-inspect')
@@ -143,6 +143,39 @@ export class ObjectInspect extends LitElement {
       font-size: 0.9rem;
       color: #666;
     }
+
+    select {
+      width: 100%;
+      padding: 0.5rem;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      font-family: inherit;
+      box-sizing: border-box;
+    }
+
+    .content-item.warning {
+      background-color: #fff3cd;
+      border-left: 4px solid #ffc107;
+    }
+
+    .content-item.extra {
+      background-color: #d1ecf1;
+      border-left: 4px solid #17a2b8;
+    }
+
+    .warning-indicator {
+      font-size: 0.75rem;
+      font-weight: bold;
+      margin-left: 0.5rem;
+    }
+
+    .warning-indicator.missing {
+      color: #ffc107;
+    }
+
+    .warning-indicator.extra {
+      color: #17a2b8;
+    }
   `;
 
   @property()
@@ -166,6 +199,18 @@ export class ObjectInspect extends LitElement {
   @state()
   declare isUploadingImage: boolean;
 
+  @state()
+  declare loadouts: Array<{ id: string; title: string; description: string; itemCount: number; createdAt: string }>;
+
+  @state()
+  declare selectedLoadout: string | null;
+
+  @state()
+  declare missingItems: Array<{ id: string; name: string; quantity: number }>;
+
+  @state()
+  declare extraItems: Array<{ id: string; name: string; quantity: number }>;
+
   constructor() {
     super();
     this.objectId = '';
@@ -175,6 +220,10 @@ export class ObjectInspect extends LitElement {
     this.contents = [];
     this.imageData = null;
     this.isUploadingImage = false;
+    this.loadouts = [];
+    this.selectedLoadout = null;
+    this.missingItems = [];
+    this.extraItems = [];
   }
 
   connectedCallback() {
@@ -196,9 +245,41 @@ export class ObjectInspect extends LitElement {
       this.title = item.title;
       this.description = item.description;
       this.imageData = (item as any).imageData || null;
+      this.selectedLoadout = (item as any).selectedLoadout || null;
       this.loadContents();
+      this.loadLoadouts();
+      this.checkLoadoutMismatch();
     } catch (error) {
       console.error('Failed to load item:', error);
+    }
+  }
+
+  private loadLoadouts() {
+    if (!this.workspaceKey) return;
+
+    try {
+      this.loadouts = getLoadouts(this.workspaceKey);
+    } catch (error) {
+      console.error('Failed to load loadouts:', error);
+      this.loadouts = [];
+    }
+  }
+
+  private checkLoadoutMismatch() {
+    if (!this.selectedLoadout) {
+      this.missingItems = [];
+      this.extraItems = [];
+      return;
+    }
+
+    try {
+      const comparison = compareContentsToLoadout(this.workspaceKey, this.objectId);
+      this.missingItems = comparison.missing;
+      this.extraItems = comparison.extra;
+    } catch (error) {
+      console.error('Failed to compare contents to loadout:', error);
+      this.missingItems = [];
+      this.extraItems = [];
     }
   }
 
@@ -273,8 +354,11 @@ export class ObjectInspect extends LitElement {
         </div>
         <div class="property">
           <label>Loadout</label>
-          <select>
-            <option>None</option>
+          <select .value=${this.selectedLoadout || ''} @change=${this.selectLoadout}>
+            <option value="">None</option>
+            ${this.loadouts.map(loadout => html`
+              <option value="${loadout.id}">${loadout.title}</option>
+            `)}
           </select>
         </div>
         <div class="actions">
@@ -286,14 +370,36 @@ export class ObjectInspect extends LitElement {
 
         <div class="contents-section">
           <h3>Contents</h3>
+          ${this.missingItems.length > 0 || this.extraItems.length > 0 ? html`
+            <div style="margin-bottom: 1rem; padding: 0.75rem; background-color: #f8f9fa; border-radius: 4px; font-size: 0.9rem;">
+              ${this.missingItems.length > 0 ? html`
+                <div style="color: #856404; margin-bottom: 0.5rem;">
+                  ⚠️ Missing ${this.missingItems.length} item${this.missingItems.length !== 1 ? 's' : ''} from loadout
+                </div>
+              ` : ''}
+              ${this.extraItems.length > 0 ? html`
+                <div style="color: #004085;">
+                  ℹ️ ${this.extraItems.length} extra item${this.extraItems.length !== 1 ? 's' : ''} not in loadout
+                </div>
+              ` : ''}
+            </div>
+          ` : ''}
           ${this.contents.length > 0 ? html`
             <div class="contents-list">
-              ${this.contents.map(content => html`
-                <div class="content-item">
-                  <span class="content-item-name">${content.name}</span>
-                  <span class="content-item-quantity">qty: ${content.quantity}</span>
-                </div>
-              `)}
+              ${this.contents.map(content => {
+                const isMissing = this.selectedLoadout && this.missingItems.some(m => m.id === content.id);
+                const isExtra = this.selectedLoadout && this.extraItems.some(e => e.id === content.id);
+                const className = isMissing ? 'warning' : isExtra ? 'extra' : '';
+                return html`
+                  <div class="content-item ${className}">
+                    <span class="content-item-name">${content.name}</span>
+                    <span class="content-item-quantity">qty: ${content.quantity}
+                      ${isMissing ? html`<span class="warning-indicator missing">⚠ missing from loadout</span>` : ''}
+                      ${isExtra ? html`<span class="warning-indicator extra">ℹ extra</span>` : ''}
+                    </span>
+                  </div>
+                `;
+              })}
             </div>
           ` : html`
             <div class="empty-contents">No contents yet</div>
@@ -335,12 +441,42 @@ export class ObjectInspect extends LitElement {
     }));
   }
 
+  private selectLoadout(e: Event) {
+    const select = e.target as HTMLSelectElement;
+    const loadoutId = select.value || null;
+
+    try {
+      updateItemProperty(this.workspaceKey, this.objectId, 'selectedLoadout', loadoutId);
+      this.selectedLoadout = loadoutId;
+      this.checkLoadoutMismatch();
+    } catch (error) {
+      console.error('Failed to select loadout:', error);
+    }
+  }
+
   private saveAsLoadout() {
-    alert('Save as loadout functionality');
+    const title = prompt('Enter loadout name:');
+    if (!title) return;
+
+    const description = prompt('Enter loadout description (optional):') || '';
+
+    try {
+      saveObjectAsLoadout(this.workspaceKey, this.objectId, title, description);
+      this.loadLoadouts();
+      alert(`✓ Saved as loadout "${title}"`);
+    } catch (error) {
+      console.error('Failed to save as loadout:', error);
+      alert('Failed to save as loadout');
+    }
   }
 
   private recheckInventory() {
-    alert('Recheck inventory functionality');
+    this.checkLoadoutMismatch();
+    if (this.missingItems.length === 0 && this.extraItems.length === 0) {
+      alert('✓ Inventory matches loadout perfectly!');
+    } else {
+      alert(`Missing: ${this.missingItems.length}, Extra: ${this.extraItems.length}`);
+    }
   }
 }
 

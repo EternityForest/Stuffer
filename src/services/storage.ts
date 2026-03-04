@@ -265,6 +265,191 @@ export function removeItemFromContents(workspaceKey: string, containerId: string
   contentsMap.delete(contentItemId);
 }
 
+export function createLoadout(workspaceKey: string, title: string, description: string = '', contents: Array<{ itemId: string; itemName: string; quantity: number }> = []) {
+  if (!workspacesMap) throw new Error('Workspaces map not initialized');
+
+  const workspace = workspacesMap.get(workspaceKey) as Y.Map<any>;
+  if (!workspace) throw new Error('Workspace not found');
+
+  const loadoutsMap = workspace.get('loadouts') as Y.Map<any>;
+  const loadoutId = generateUUID();
+
+  const loadout = new Y.Map();
+  loadout.set('title', title);
+  loadout.set('description', description);
+  loadout.set('createdAt', new Date().toISOString());
+
+  const loadoutContents = new Y.Map();
+  contents.forEach(({ itemId, itemName, quantity }) => {
+    const content = new Y.Map();
+    content.set('name', itemName);
+    content.set('quantity', quantity);
+    loadoutContents.set(itemId, content);
+  });
+
+  loadout.set('contents', loadoutContents);
+  loadoutsMap.set(loadoutId, loadout);
+
+  return loadoutId;
+}
+
+export function saveObjectAsLoadout(workspaceKey: string, objectId: string, title: string, description: string = '') {
+  if (!workspacesMap) throw new Error('Workspaces map not initialized');
+
+  const workspace = workspacesMap.get(workspaceKey) as Y.Map<any>;
+  if (!workspace) throw new Error('Workspace not found');
+
+  const objectsMap = workspace.get('objects') as Y.Map<any>;
+  const object = objectsMap.get(objectId) as Y.Map<any>;
+  if (!object) throw new Error('Object not found');
+
+  const objectContents = getItemContents(workspaceKey, objectId);
+  return createLoadout(workspaceKey, title, description,
+    objectContents.map(c => ({ itemId: c.id, itemName: c.name, quantity: c.quantity }))
+  );
+}
+
+export function getLoadouts(workspaceKey: string) {
+  if (!workspacesMap) throw new Error('Workspaces map not initialized');
+
+  const workspace = workspacesMap.get(workspaceKey) as Y.Map<any>;
+  if (!workspace) throw new Error('Workspace not found');
+
+  const loadoutsMap = workspace.get('loadouts') as Y.Map<any>;
+  const loadouts: Array<{ id: string; title: string; description: string; itemCount: number; createdAt: string }> = [];
+
+  loadoutsMap.forEach((loadout, id) => {
+    const contentsMap = (loadout as Y.Map<any>).get('contents') as Y.Map<any>;
+    loadouts.push({
+      id,
+      title: (loadout as Y.Map<any>).get('title') as string,
+      description: (loadout as Y.Map<any>).get('description') as string,
+      itemCount: contentsMap ? contentsMap.size : 0,
+      createdAt: (loadout as Y.Map<any>).get('createdAt') as string,
+    });
+  });
+
+  return loadouts;
+}
+
+export function getLoadout(workspaceKey: string, loadoutId: string) {
+  if (!workspacesMap) throw new Error('Workspaces map not initialized');
+
+  const workspace = workspacesMap.get(workspaceKey) as Y.Map<any>;
+  if (!workspace) throw new Error('Workspace not found');
+
+  const loadoutsMap = workspace.get('loadouts') as Y.Map<any>;
+  const loadout = loadoutsMap.get(loadoutId) as Y.Map<any>;
+  if (!loadout) throw new Error('Loadout not found');
+
+  const contentsMap = loadout.get('contents') as Y.Map<any>;
+  const contents: Array<{ id: string; name: string; quantity: number }> = [];
+
+  contentsMap.forEach((content, id) => {
+    contents.push({
+      id,
+      name: (content as Y.Map<any>).get('name') as string,
+      quantity: (content as Y.Map<any>).get('quantity') as number,
+    });
+  });
+
+  return {
+    id: loadoutId,
+    title: loadout.get('title') as string,
+    description: loadout.get('description') as string,
+    contents,
+    createdAt: loadout.get('createdAt') as string,
+  };
+}
+
+export function updateLoadoutProperty(workspaceKey: string, loadoutId: string, property: string, value: any) {
+  if (!workspacesMap) throw new Error('Workspaces map not initialized');
+
+  const workspace = workspacesMap.get(workspaceKey) as Y.Map<any>;
+  if (!workspace) throw new Error('Workspace not found');
+
+  const loadoutsMap = workspace.get('loadouts') as Y.Map<any>;
+  const loadout = loadoutsMap.get(loadoutId) as Y.Map<any>;
+  if (!loadout) throw new Error('Loadout not found');
+
+  loadout.set(property, value);
+}
+
+export function addItemToLoadout(workspaceKey: string, loadoutId: string, itemId: string, itemName: string, quantity: number = 1) {
+  if (!workspacesMap) throw new Error('Workspaces map not initialized');
+
+  const workspace = workspacesMap.get(workspaceKey) as Y.Map<any>;
+  if (!workspace) throw new Error('Workspace not found');
+
+  const loadoutsMap = workspace.get('loadouts') as Y.Map<any>;
+  const loadout = loadoutsMap.get(loadoutId) as Y.Map<any>;
+  if (!loadout) throw new Error('Loadout not found');
+
+  const contentsMap = loadout.get('contents') as Y.Map<any>;
+
+  const content = new Y.Map();
+  content.set('name', itemName);
+  content.set('quantity', quantity);
+
+  contentsMap.set(itemId, content);
+}
+
+export function removeItemFromLoadout(workspaceKey: string, loadoutId: string, itemId: string) {
+  if (!workspacesMap) throw new Error('Workspaces map not initialized');
+
+  const workspace = workspacesMap.get(workspaceKey) as Y.Map<any>;
+  if (!workspace) throw new Error('Workspace not found');
+
+  const loadoutsMap = workspace.get('loadouts') as Y.Map<any>;
+  const loadout = loadoutsMap.get(loadoutId) as Y.Map<any>;
+  if (!loadout) throw new Error('Loadout not found');
+
+  const contentsMap = loadout.get('contents') as Y.Map<any>;
+  contentsMap.delete(itemId);
+}
+
+export function deleteLoadout(workspaceKey: string, loadoutId: string) {
+  if (!workspacesMap) throw new Error('Workspaces map not initialized');
+
+  const workspace = workspacesMap.get(workspaceKey) as Y.Map<any>;
+  if (!workspace) throw new Error('Workspace not found');
+
+  const loadoutsMap = workspace.get('loadouts') as Y.Map<any>;
+  loadoutsMap.delete(loadoutId);
+}
+
+export function compareContentsToLoadout(workspaceKey: string, objectId: string): { missing: Array<{ id: string; name: string; quantity: number }>; extra: Array<{ id: string; name: string; quantity: number }> } {
+  if (!workspacesMap) throw new Error('Workspaces map not initialized');
+
+  const workspace = workspacesMap.get(workspaceKey) as Y.Map<any>;
+  if (!workspace) throw new Error('Workspace not found');
+
+  const objectsMap = workspace.get('objects') as Y.Map<any>;
+  const object = objectsMap.get(objectId) as Y.Map<any>;
+  if (!object) throw new Error('Object not found');
+
+  const selectedLoadoutId = object.get('selectedLoadout') as string | null;
+  if (!selectedLoadoutId) {
+    return { missing: [], extra: [] };
+  }
+
+  try {
+    const loadout = getLoadout(workspaceKey, selectedLoadoutId);
+    const objectContents = getItemContents(workspaceKey, objectId);
+
+    // Create maps for easy comparison
+    const loadoutMap = new Map(loadout.contents.map(c => [c.id, c]));
+    const objectMap = new Map(objectContents.map(c => [c.id, c]));
+
+    const missing = loadout.contents.filter(item => !objectMap.has(item.id));
+    const extra = objectContents.filter(item => !loadoutMap.has(item.id));
+
+    return { missing, extra };
+  } catch (error) {
+    return { missing: [], extra: [] };
+  }
+}
+
 function generateUUID(): string {
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
     const r = (Math.random() * 16) | 0;

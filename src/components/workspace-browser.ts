@@ -73,6 +73,22 @@ export class WorkspaceBrowser extends LitElement {
       font-size: 0.85rem;
       color: #666;
     }
+
+    .loadout-status {
+      font-size: 0.8rem;
+      margin-top: 0.5rem;
+      padding: 0.25rem 0.5rem;
+      border-radius: 3px;
+      background-color: #e7f3ff;
+      color: #004085;
+    }
+
+    .loadout-warning {
+      font-size: 0.8rem;
+      margin-top: 0.25rem;
+      color: #856404;
+      font-weight: bold;
+    }
   `;
 
   @property()
@@ -132,7 +148,7 @@ export class WorkspaceBrowser extends LitElement {
           @input=${(e: Event) => { this.searchQuery = (e.target as HTMLInputElement).value; }}
         />
         <button @click=${() => this.addItem()}>Add Item</button>
-        <button @click=${() => this.dispatchNavigate('list-browser')}>Loadouts</button>
+        <button @click=${() => this.navigateToLoadouts()}>Loadouts</button>
         <button @click=${() => this.dispatchNavigate('workspace-selector')}>Back</button>
       </div>
       <div class="objects-grid">
@@ -167,6 +183,17 @@ export class WorkspaceBrowser extends LitElement {
   private selectObject(objectId: string) {
     this.dispatchEvent(new CustomEvent('select-object', {
       detail: objectId,
+      bubbles: true,
+      composed: true,
+    }));
+  }
+
+  private navigateToLoadouts() {
+    this.dispatchEvent(new CustomEvent('navigate', {
+      detail: {
+        screen: 'loadouts-manager',
+        context: { workspaceKey: this.workspaceKey }
+      },
       bubbles: true,
       composed: true,
     }));

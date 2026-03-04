@@ -1,7 +1,7 @@
 import { LitElement, html, css } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
 
-type Screen = 'workspace-selector' | 'workspace-browser' | 'object-inspect' | 'list-browser' | 'add-remove-item';
+type Screen = 'workspace-selector' | 'workspace-browser' | 'object-inspect' | 'list-browser' | 'add-remove-item' | 'loadouts-manager';
 
 @customElement('app-shell')
 export class AppShell extends LitElement {
@@ -44,9 +44,10 @@ export class AppShell extends LitElement {
     this.navigateContext = null;
   }
 
-  navigateTo(screen: Screen, context?: { workspace?: string; object?: string; containerId?: string; mode?: string }) {
+  navigateTo(screen: Screen, context?: { workspace?: string; workspaceKey?: string; object?: string; containerId?: string; loadoutId?: string; mode?: string }) {
     this.currentScreen = screen;
     if (context?.workspace) this.currentWorkspace = context.workspace;
+    if (context?.workspaceKey) this.currentWorkspace = context.workspaceKey;
     if (context?.object) this.selectedObject = context.object;
     this.navigateContext = context || null;
   }
@@ -80,9 +81,15 @@ export class AppShell extends LitElement {
         return html`<list-browser
           .workspaceKey=${this.currentWorkspace}
           .containerId=${(this.navigateContext?.containerId as string) || ''}
-          .mode=${(this.navigateContext?.mode as 'add-to-contents' | 'remove-from-contents' | 'loadout') || 'loadout'}
+          .loadoutId=${(this.navigateContext?.loadoutId as string) || ''}
+          .mode=${(this.navigateContext?.mode as 'add-to-contents' | 'remove-from-contents' | 'create-loadout' | 'edit-loadout') || 'create-loadout'}
           @navigate=${this.onNavigate}
         ></list-browser>`;
+      case 'loadouts-manager':
+        return html`<loadouts-manager
+          .workspaceKey=${this.currentWorkspace}
+          @navigate=${this.onNavigate}
+        ></loadouts-manager>`;
       case 'add-remove-item':
         return html`<add-remove-item
           .workspaceKey=${this.currentWorkspace}

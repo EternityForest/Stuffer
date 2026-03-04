@@ -1,6 +1,6 @@
 import { LitElement, html, css } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
-import { getItems, getItemContents, addItemToContents, removeItemFromContents, findItemByQR } from '../services/storage.js';
+import { getItems, getItemContents, addItemToContents, removeItemFromContents, findItemByQR, createLoadout, getLoadout, addItemToLoadout, removeItemFromLoadout } from '../services/storage.js';
 import jsQR from 'jsqr';
 
 @customElement('list-browser')
@@ -193,7 +193,10 @@ export class ListBrowser extends LitElement {
   declare containerId: string;
 
   @property()
-  declare mode: 'add-to-contents' | 'remove-from-contents' | 'loadout';
+  declare loadoutId: string;
+
+  @property()
+  declare mode: 'add-to-contents' | 'remove-from-contents' | 'create-loadout' | 'edit-loadout';
 
   @state()
   declare items: Array<{ id: string; name: string; qrData?: string; createdAt: string }>;
@@ -217,7 +220,8 @@ export class ListBrowser extends LitElement {
     super();
     this.workspaceKey = '';
     this.containerId = '';
-    this.mode = 'loadout';
+    this.loadoutId = '';
+    this.mode = 'create-loadout';
     this.items = [];
     this.selectedQuantities = new Map();
     this.isScanning = false;
@@ -236,7 +240,7 @@ export class ListBrowser extends LitElement {
   }
 
   updated(changedProperties: Map<string, any>) {
-    if (changedProperties.has('workspaceKey') || changedProperties.has('mode') || changedProperties.has('containerId')) {
+    if (changedProperties.has('workspaceKey') || changedProperties.has('mode') || changedProperties.has('containerId') || changedProperties.has('loadoutId')) {
       this.loadItems();
     }
   }
@@ -253,8 +257,17 @@ export class ListBrowser extends LitElement {
           qrData: undefined,
           createdAt: new Date().toISOString(),
         }));
+      } else if (this.mode === 'edit-loadout' && this.loadoutId) {
+        // For edit loadout mode, load items that are IN the loadout
+        const loadout = getLoadout(this.workspaceKey, this.loadoutId);
+        this.items = loadout.contents.map(content => ({
+          id: content.id,
+          name: content.name,
+          qrData: undefined,
+          createdAt: new Date().toISOString(),
+        }));
       } else {
-        // For add mode, load all items in workspace
+        // For add-to-contents and create-loadout modes, load all items in workspace
         this.items = getItems(this.workspaceKey);
       }
     } catch (error) {
@@ -266,7 +279,8 @@ export class ListBrowser extends LitElement {
   render() {
     const title = this.mode === 'add-to-contents' ? 'Add Items to Container' :
                   this.mode === 'remove-from-contents' ? 'Remove Items from Container' :
-                  'Loadouts';
+                  this.mode === 'create-loadout' ? 'Create Loadout' :
+                  'Edit Loadout';
 
     return html`
       ${this.toastMessage ? html`
@@ -277,7 +291,7 @@ export class ListBrowser extends LitElement {
 
       <div class="header">
         <h2>${title}</h2>
-        ${(this.mode === 'add-to-contents' || this.mode === 'remove-from-contents') ? html`
+        ${(this.mode === 'add-to-contents' || this.mode === 'remove-from-contents' || this.mode === 'create-loadout' || this.mode === 'edit-loadout') ? html`
           <button @click=${() => this.toggleScanning()}>${this.isScanning ? 'Stop Scan' : 'Scan QR'}</button>
         ` : ''}
         <button @click=${() => this.goBack()}>Back</button>
@@ -290,7 +304,7 @@ export class ListBrowser extends LitElement {
           </div>
         ` : ''}
 
-        ${this.mode === 'add-to-contents' || this.mode === 'remove-from-contents' ? html`
+        ${this.mode === 'add-to-contents' || this.mode === 'remove-from-contents' || this.mode === 'create-loadout' || this.mode === 'edit-loadout' ? html`
           ${this.items.length > 0 ? html`
             ${this.items.map(item => html`
               <div class="list-item">
@@ -301,24 +315,29 @@ export class ListBrowser extends LitElement {
                   </div>
                 </div>
                 <div class="item-actions">
-                  ${this.mode === 'add-to-contents' ? html`
+                  ${(this.mode === 'add-to-contents' || this.mode === 'create-loadout') ? html`
                     <input type="number" class="quantity-input" min="1" value="1"
                       @change=${(e: Event) => this.selectedQuantities.set(item.id, parseInt((e.target as HTMLInputElement).value))}
                     />
-                    <button class="action-btn add-btn" @click=${() => this.addItemToContainer(item.id, item.name)}>Add</button>
+                    ${this.mode === 'add-to-contents' ? html`
+                      <button class="action-btn add-btn" @click=${() => this.addItemToContainer(item.id, item.name)}>Add</button>
+                    ` : html`
+                      <button class="action-btn add-btn" @click=${() => this.addItemToLoadout(item.id, item.name)}>Add</button>
+                    `}
                   ` : html`
-                    <button class="action-btn delete-btn" @click=${() => this.removeItemFromContainer(item.id)}>Remove</button>
+                    <button class="action-btn delete-btn" @click=${() => this.mode === 'remove-from-contents' ? this.removeItemFromContainer(item.id) : this.removeItemFromLoadout(item.id)}>Remove</button>
                   `}
                 </div>
               </div>
             `)}
           ` : html`
-            <div class="empty-message">${this.mode === 'remove-from-contents' ? 'No items in container' : 'No items yet'}</div>
+            <div class="empty-message">
+              ${this.mode === 'remove-from-contents' ? 'No items in container' :
+                this.mode === 'edit-loadout' ? 'No items in loadout' :
+                'No items yet'}
+            </div>
           `}
-        ` : html`
-          <!-- Loadout mode placeholder -->
-          <div class="empty-message">Loadout functionality coming soon</div>
-        `}
+        ` : ''}
       </div>
     `;
   }
@@ -350,17 +369,108 @@ export class ListBrowser extends LitElement {
     }
   }
 
+  private addItemToLoadout(itemId: string, itemName: string) {
+    if (!this.workspaceKey || !this.loadoutId) return;
+
+    try {
+      const quantity = this.selectedQuantities.get(itemId) || 1;
+      addItemToLoadout(this.workspaceKey, this.loadoutId, itemId, itemName, quantity);
+      this.selectedQuantities.delete(itemId);
+      this.showToast(`✓ Added ${itemName}`, 'success');
+    } catch (error) {
+      console.error('Failed to add item to loadout:', error);
+      this.showToast('Failed to add item', 'error');
+    }
+  }
+
+  private removeItemFromLoadout(itemId: string) {
+    if (!this.workspaceKey || !this.loadoutId) return;
+
+    try {
+      removeItemFromLoadout(this.workspaceKey, this.loadoutId, itemId);
+      this.loadItems();
+      this.showToast('✓ Removed', 'success');
+    } catch (error) {
+      console.error('Failed to remove item from loadout:', error);
+      this.showToast('Failed to remove item', 'error');
+    }
+  }
+
   private goBack() {
     this.stopScanning();
-    // Pass context back so object-inspect knows which object to refresh
-    this.dispatchEvent(new CustomEvent('navigate', {
-      detail: {
-        screen: 'object-inspect',
-        context: { object: this.containerId }
-      },
-      bubbles: true,
-      composed: true,
-    }));
+
+    if (this.mode === 'create-loadout') {
+      // After creating, prompt for loadout name and go to loadouts manager
+      this.promptLoadoutName();
+    } else if (this.mode === 'edit-loadout') {
+      // After editing, go back to loadouts manager
+      this.dispatchEvent(new CustomEvent('navigate', {
+        detail: {
+          screen: 'loadouts-manager',
+          context: { workspaceKey: this.workspaceKey }
+        },
+        bubbles: true,
+        composed: true,
+      }));
+    } else {
+      // For add/remove from contents, go back to object-inspect
+      this.dispatchEvent(new CustomEvent('navigate', {
+        detail: {
+          screen: 'object-inspect',
+          context: { object: this.containerId }
+        },
+        bubbles: true,
+        composed: true,
+      }));
+    }
+  }
+
+  private promptLoadoutName() {
+    const title = prompt('Enter loadout name:');
+    if (!title) {
+      // If cancelled, go back to loadouts manager without saving
+      this.dispatchEvent(new CustomEvent('navigate', {
+        detail: {
+          screen: 'loadouts-manager',
+          context: { workspaceKey: this.workspaceKey }
+        },
+        bubbles: true,
+        composed: true,
+      }));
+      return;
+    }
+
+    try {
+      const description = prompt('Enter loadout description (optional):') || '';
+
+      // Get the selected items from the current state
+      const contents = Array.from(this.selectedQuantities.entries()).map(([itemId, quantity]) => {
+        const item = this.items.find(i => i.id === itemId);
+        return {
+          itemId,
+          itemName: item?.name || '',
+          quantity
+        };
+      });
+
+      createLoadout(this.workspaceKey, title, description, contents);
+      this.showToast(`✓ Created loadout "${title}"`, 'success');
+
+      // Navigate to loadouts manager
+      setTimeout(() => {
+        this.dispatchEvent(new CustomEvent('navigate', {
+          detail: {
+            screen: 'loadouts-manager',
+            context: { workspaceKey: this.workspaceKey }
+          },
+          bubbles: true,
+          composed: true,
+        }));
+      }, 500);
+    } catch (error) {
+      console.error('Failed to create loadout:', error);
+      this.showToast('Failed to create loadout', 'error');
+    }
   }
 
   private toggleScanning() {
