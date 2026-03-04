@@ -1,0 +1,188 @@
+import { LitElement, html, css } from 'lit';
+import { customElement, property, state } from 'lit/decorators.js';
+import { getItems } from '../services/storage.js';
+
+@customElement('workspace-browser')
+export class WorkspaceBrowser extends LitElement {
+  static createRenderRoot() {
+    return this;
+  }
+
+  static styles = css`
+    :host {
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+    }
+
+    .header {
+      padding: 1rem;
+      border-bottom: 1px solid #ddd;
+      display: flex;
+      gap: 1rem;
+      align-items: center;
+    }
+
+    .search-bar {
+      flex: 1;
+      padding: 0.5rem;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+    }
+
+    button {
+      padding: 0.5rem 1rem;
+      background-color: #007bff;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+
+    button:hover {
+      background-color: #0056b3;
+    }
+
+    .objects-grid {
+      flex: 1;
+      overflow-y: auto;
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 1rem;
+      padding: 1rem;
+    }
+
+    .object-card {
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      padding: 1rem;
+      cursor: pointer;
+      transition: box-shadow 0.2s;
+    }
+
+    .object-card:hover {
+      box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+    }
+
+    .object-card h3 {
+      margin-top: 0;
+      margin-bottom: 0.5rem;
+    }
+
+    .object-card .meta {
+      font-size: 0.85rem;
+      color: #666;
+    }
+  `;
+
+  @property()
+  declare workspaceName: string;
+
+  @property()
+  declare workspaceKey: string;
+
+  @state()
+  declare searchQuery: string;
+
+  @state()
+  declare objects: Array<{ id: string; name: string; qrData?: string; createdAt: string }>;
+
+  constructor() {
+    super();
+    this.workspaceName = '';
+    this.workspaceKey = '';
+    this.searchQuery = '';
+    this.objects = [];
+  }
+
+  connectedCallback() {
+    super.connectedCallback();
+    this.loadItems();
+  }
+
+  private loadItems() {
+    if (!this.workspaceKey) return;
+
+    try {
+      this.objects = getItems(this.workspaceKey);
+    } catch (error) {
+      console.error('Failed to load items:', error);
+      this.objects = [];
+    }
+  }
+
+  updated(changedProperties: Map<string, any>) {
+    if (changedProperties.has('workspaceKey')) {
+      this.loadItems();
+    }
+  }
+
+  render() {
+    const filteredObjects = this.objects.filter(obj =>
+      obj.name.toLowerCase().includes(this.searchQuery.toLowerCase())
+    );
+
+    return html`
+      <div class="header">
+        <input
+          type="text"
+          class="search-bar"
+          placeholder="Search items..."
+          .value=${this.searchQuery}
+          @input=${(e: Event) => { this.searchQuery = (e.target as HTMLInputElement).value; }}
+        />
+        <button @click=${() => this.addItem()}>Add Item</button>
+        <button @click=${() => this.dispatchNavigate('list-browser')}>Loadouts</button>
+        <button @click=${() => this.dispatchNavigate('workspace-selector')}>Back</button>
+      </div>
+      <div class="objects-grid">
+        ${filteredObjects.map(obj => html`
+          <div class="object-card" @click=${() => this.selectObject(obj.id)}>
+            <h3>${obj.name}</h3>
+            <div class="meta">
+              ${obj.qrData ? html`<div>QR: ${obj.qrData.substring(0, 20)}...</div>` : html`<div>Manual Entry</div>`}
+              <div>${new Date(obj.createdAt).toLocaleDateString()}</div>
+            </div>
+          </div>
+        `)}
+        ${filteredObjects.length === 0 ? html`
+          <div style="grid-column: 1/-1; text-align: center; padding: 2rem; color: #666;">
+            ${this.objects.length === 0
+              ? 'No items yet. Add one to get started.'
+              : 'No items match your search.'}
+          </div>
+        ` : ''}
+      </div>
+    `;
+  }
+
+  private addItem() {
+    this.dispatchEvent(new CustomEvent('navigate', {
+      detail: { screen: 'add-remove-item', context: { workspace: this.workspaceKey } },
+      bubbles: true,
+      composed: true,
+    }));
+  }
+
+  private selectObject(objectId: string) {
+    this.dispatchEvent(new CustomEvent('select-object', {
+      detail: objectId,
+      bubbles: true,
+      composed: true,
+    }));
+  }
+
+  private dispatchNavigate(screen: string) {
+    this.dispatchEvent(new CustomEvent('navigate', {
+      detail: { screen },
+      bubbles: true,
+      composed: true,
+    }));
+  }
+}
+
+declare global {
+  interface HTMLElementTagNameMap {
+    'workspace-browser': WorkspaceBrowser;
+  }
+}

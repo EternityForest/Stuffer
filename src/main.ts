@@ -1,0 +1,36 @@
+import { LitElement, html, css } from 'lit';
+import { customElement } from 'lit/decorators.js';
+import { initializeYDoc } from './services/storage.js';
+import './components/app-shell.js';
+import './components/workspace-selector.js';
+import './components/workspace-browser.js';
+import './components/object-inspect.js';
+import './components/list-browser.js';
+import './components/add-remove-item.js';
+
+@customElement('stuffer-app')
+class StufferApp extends LitElement {
+  static styles = css`
+    :host {
+      display: block;
+      height: 100vh;
+      width: 100vw;
+    }
+  `;
+
+  async connectedCallback() {
+    super.connectedCallback();
+    await initializeYDoc();
+  }
+
+  render() {
+    return html`
+      <app-shell></app-shell>
+    `;
+  }
+}
+
+// Mount the app
+const app = document.getElementById('app');
+const stufferApp = document.createElement('stuffer-app');
+app?.appendChild(stufferApp);
