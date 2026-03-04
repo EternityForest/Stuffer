@@ -245,7 +245,7 @@ export class ObjectInspect extends LitElement {
       this.title = item.title;
       this.description = item.description;
       this.imageData = (item as any).imageData || null;
-      this.selectedLoadout = (item as any).selectedLoadout || null;
+      this.selectedLoadout = item.selectedLoadout || null;
       this.loadContents();
       this.loadLoadouts();
       this.checkLoadoutMismatch();
@@ -354,10 +354,10 @@ export class ObjectInspect extends LitElement {
         </div>
         <div class="property">
           <label>Loadout</label>
-          <select .value=${this.selectedLoadout || ''} @change=${this.selectLoadout}>
-            <option value="">None</option>
+          <select @change=${this.selectLoadout}>
+            <option value="" ?selected=${!this.selectedLoadout}>None</option>
             ${this.loadouts.map(loadout => html`
-              <option value="${loadout.id}">${loadout.title}</option>
+              <option value="${loadout.id}" ?selected=${this.selectedLoadout === loadout.id}>${loadout.title}</option>
             `)}
           </select>
         </div>
@@ -443,7 +443,7 @@ export class ObjectInspect extends LitElement {
 
   private selectLoadout(e: Event) {
     const select = e.target as HTMLSelectElement;
-    const loadoutId = select.value || null;
+    const loadoutId = select.value === '' ? null : select.value;
 
     try {
       updateItemProperty(this.workspaceKey, this.objectId, 'selectedLoadout', loadoutId);
