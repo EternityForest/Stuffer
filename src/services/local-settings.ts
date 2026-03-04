@@ -1,18 +1,16 @@
 /**
- * Local browser-only settings storage (not synced via WebRTC)
- * Stores per-workspace configuration like sync room keys and WebRTC status
+ * Local browser-only settings storage (not synced via peer-to-peer)
+ * Stores per-workspace configuration like sync room keys and connection status
  */
 
 interface WorkspaceLocalSettings {
   syncRoomKey?: string;
-  signalingServers?: string[];
-  lastWebRTCConnectionTime?: number;
-  webrtcRetryCount?: number;
-  webrtcLastError?: string;
+  lastSyncConnectionTime?: number;
+  syncRetryCount?: number;
+  syncLastError?: string;
 }
 
 const STORAGE_KEY = 'stuffer:workspace-settings';
-const DEFAULT_SIGNALING_SERVERS = ['wss://signaling.yjs.dev', 'wss://y-webrtc-ckynwnzncc.now.sh'];
 
 function getLocalSettings(): Map<string, WorkspaceLocalSettings> {
   const stored = localStorage.getItem(STORAGE_KEY);
@@ -57,23 +55,15 @@ export function setSyncRoomKey(workspaceKey: string, roomKey: string) {
   setWorkspaceLocalSettings(workspaceKey, { syncRoomKey: roomKey });
 }
 
-export function getSignalingServers(workspaceKey: string): string[] {
-  const settings = getWorkspaceLocalSettings(workspaceKey);
-  return settings.signalingServers || DEFAULT_SIGNALING_SERVERS;
-}
-
-export function setSignalingServers(workspaceKey: string, servers: string[]) {
-  setWorkspaceLocalSettings(workspaceKey, { signalingServers: servers });
-}
 
 export function recordWebRTCConnectionAttempt(workspaceKey: string) {
   const settings = getWorkspaceLocalSettings(workspaceKey);
-  const retryCount = (settings.webrtcRetryCount || 0) + 1;
+  const retryCount = (settings.syncRetryCount || 0) + 1;
 
   setWorkspaceLocalSettings(workspaceKey, {
-    lastWebRTCConnectionTime: Date.now(),
-    webrtcRetryCount: retryCount,
-    webrtcLastError: undefined,
+    lastSyncConnectionTime: Date.now(),
+    syncRetryCount: retryCount,
+    syncLastError: undefined,
   });
 
   return retryCount;
@@ -81,14 +71,14 @@ export function recordWebRTCConnectionAttempt(workspaceKey: string) {
 
 export function recordWebRTCError(workspaceKey: string, error: string) {
   setWorkspaceLocalSettings(workspaceKey, {
-    webrtcLastError: error,
+    syncLastError: error,
   });
 }
 
 export function clearWebRTCRetryCount(workspaceKey: string) {
   setWorkspaceLocalSettings(workspaceKey, {
-    webrtcRetryCount: 0,
-    webrtcLastError: undefined,
+    syncRetryCount: 0,
+    syncLastError: undefined,
   });
 }
 
@@ -106,5 +96,5 @@ export function getWebRTCRetryDelay(retryCount: number, baseDelay = 1000, maxDel
 
 export function getWebRTCRetryCount(workspaceKey: string): number {
   const settings = getWorkspaceLocalSettings(workspaceKey);
-  return settings.webrtcRetryCount || 0;
+  return settings.syncRetryCount || 0;
 }

@@ -1,10 +1,9 @@
 import * as Y from 'yjs';
 import { IndexeddbPersistence } from 'y-indexeddb';
-import { WebrtcProvider } from 'y-webrtc';
+import Peer, { type DataConnection } from 'peerjs';
 import {
   getSyncRoomKey,
   setSyncRoomKey,
-  getSignalingServers,
   getWebRTCRetryDelay,
   getWebRTCRetryCount,
   recordWebRTCConnectionAttempt,
@@ -16,7 +15,14 @@ let yDoc: Y.Doc | null = null;
 let workspacesMap: Y.Map<any> | null = null;
 let initPromise: Promise<Y.Doc> | null = null;
 
-const webrtcProviders = new Map<string, WebrtcProvider>();
+// Per-workspace peer instance
+const peerInstances = new Map<string, Peer>();
+
+// Per-workspace connections: Map of remote peer ID → DataConnection
+const peerConnections = new Map<string, Map<string, DataConnection>>();
+
+// Track connected peers per workspace
+const connectedPeers = new Map<string, Set<string>>();
 
 export async function initializeYDoc() {
   if (yDoc && workspacesMap) return yDoc;
@@ -479,7 +485,7 @@ export function enableWebRTC(workspaceKey: string, signalingServers: string[] = 
   if (!workspacesMap) throw new Error('Workspaces map not initialized');
 
   // Disconnect any existing provider
-  if (webrtcProviders.has(workspaceKey)) {
+  if (peerInstances.has(workspaceKey)) {
     disconnectWebRTC(workspaceKey);
   }
 
@@ -490,39 +496,49 @@ export function enableWebRTC(workspaceKey: string, signalingServers: string[] = 
     // Use room key from local settings, not from synced workspace
     const roomName = getSyncRoomKey(workspaceKey);
 
-    // Just don't even try right now till we actually make it work
-    return null as any;
-
     if (!roomName || roomName.trim() === '') {
-      console.log(`Skipping WebRTC sync for workspace ${workspaceKey}: sync key is empty`);
+      console.log(`Skipping sync for workspace ${workspaceKey}: sync key is empty`);
       return null as any;
     }
 
-    const servers = signalingServers.length > 0 ? signalingServers : getSignalingServers(workspaceKey);
-
-    const provider = new WebrtcProvider(roomName, yDoc, {
-      signaling: servers,
-      maxConns: 20,
-      filterBcConns: true,
+    // Create PeerJS instance
+    const peer = new Peer({
+      config: {
+        iceServers: [
+          { urls: 'stun:stun.l.google.com:19302' },
+          { urls: 'stun:stun1.l.google.com:19302' },
+        ],
+      },
     });
 
-    // Clear retry count on successful connection
-    provider.on('status', ({ connected }: { connected: boolean }) => {
-      if (connected) {
-        clearWebRTCRetryCount(workspaceKey);
-      }
+    // Store peer instance
+    peerInstances.set(workspaceKey, peer);
+
+    // On open: connect to room rendezvous point
+    peer.on('open', (myPeerId) => {
+      connectToRoom(workspaceKey, roomName, myPeerId, peer);
     });
 
-    // Store provider for later cleanup
-    webrtcProviders.set(workspaceKey, provider);
+    // On incoming connection: accept and set up sync
+    peer.on('connection', (conn) => {
+      setupConnection(workspaceKey, conn);
+    });
+
+    // Error handling with existing retry logic
+    peer.on('error', (err) => {
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      recordWebRTCError(workspaceKey, errorMsg);
+      console.error('PeerJS error:', err);
+      scheduleWebRTCRetry(workspaceKey);
+    });
+
     clearWebRTCRetryTimers(workspaceKey);
-
-    console.log(`WebRTC sync enabled for workspace ${workspaceKey} (room: ${roomName})`);
-    return provider;
+    console.log(`Sync enabled for workspace ${workspaceKey} (room: ${roomName})`);
+    return peer;
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error);
     recordWebRTCError(workspaceKey, errorMsg);
-    console.error('Failed to enable WebRTC:', error);
+    console.error('Failed to enable sync:', error);
 
     // Schedule retry with exponential backoff
     scheduleWebRTCRetry(workspaceKey);
@@ -530,14 +546,167 @@ export function enableWebRTC(workspaceKey: string, signalingServers: string[] = 
   }
 }
 
-export function disconnectWebRTC(workspaceKey: string) {
-  const provider = webrtcProviders.get(workspaceKey);
-  if (provider) {
-    provider.destroy();
-    webrtcProviders.delete(workspaceKey);
+function connectToRoom(workspaceKey: string, roomKey: string, myPeerId: string, peer: Peer) {
+  // Connect to room rendezvous peer
+  const roomConn = peer.connect(roomKey);
+
+  roomConn.on('open', () => {
+    // Announce ourselves
+    roomConn.send({
+      type: 'announce',
+      peerId: myPeerId,
+      workspaceKey: workspaceKey,
+    });
+  });
+
+  roomConn.on('data', (data: any) => {
+    if (data.type === 'peer-list') {
+      // Connect to all existing peers
+      data.peers.forEach((peerId: string) => {
+        if (peerId !== myPeerId) {
+          const conn = peer.connect(peerId);
+          setupConnection(workspaceKey, conn);
+        }
+      });
+    } else if (data.type === 'announce') {
+      // Relay peer list to new joiner
+      const connections = peerConnections.get(workspaceKey);
+      const peerList = connections ? Array.from(connections.keys()) : [];
+      roomConn.send({
+        type: 'peer-list',
+        peers: [myPeerId, ...peerList],
+      });
+    }
+  });
+
+  roomConn.on('close', () => {
+    // Remove from connections when room connection closes
+    const conns = peerConnections.get(workspaceKey);
+    if (conns) {
+      conns.delete(roomKey);
+    }
+  });
+
+  // Store connection
+  if (!peerConnections.has(workspaceKey)) {
+    peerConnections.set(workspaceKey, new Map());
   }
+  peerConnections.get(workspaceKey)!.set(roomKey, roomConn);
+}
+
+function setupConnection(workspaceKey: string, conn: DataConnection) {
+  if (!yDoc) {
+    console.error('YDoc not initialized for sync');
+    conn.close();
+    return;
+  }
+
+  // Track this peer as connected
+  if (!connectedPeers.has(workspaceKey)) {
+    connectedPeers.set(workspaceKey, new Set());
+  }
+  connectedPeers.get(workspaceKey)!.add(conn.peer);
+
+  let synced = false;
+
+  // Listen for document updates and sync to this peer
+  const updateHandler = (update: Uint8Array) => {
+    try {
+      conn.send({
+        type: 'sync',
+        data: update,
+      });
+    } catch (error) {
+      console.error('Failed to send sync message:', error);
+    }
+  };
+
+  // Handle incoming messages
+  conn.on('data', (msg: any) => {
+    if (msg.type === 'sync' && msg.data instanceof Uint8Array) {
+      try {
+        if (yDoc) {
+          Y.applyUpdate(yDoc, msg.data);
+        }
+      } catch (error) {
+        console.error('Failed to apply sync update:', error);
+      }
+    }
+  });
+
+  // On connection, send full state and subscribe to updates
+  conn.on('open', () => {
+    try {
+      if (!yDoc) {
+        console.error('YDoc is null during connection open');
+        return;
+      }
+
+      // Send full document state as initial sync
+      const state = Y.encodeStateAsUpdate(yDoc);
+      conn.send({
+        type: 'sync',
+        data: state,
+      });
+
+      // Subscribe to future updates
+      yDoc.on('update', updateHandler);
+      synced = true;
+      clearWebRTCRetryCount(workspaceKey);
+    } catch (error) {
+      console.error('Failed to sync initial state:', error);
+    }
+  });
+
+  conn.on('close', () => {
+    // Unsubscribe from updates
+    if (synced) {
+      yDoc.off('update', updateHandler);
+    }
+
+    // Remove from connected peers
+    const peers = connectedPeers.get(workspaceKey);
+    if (peers) {
+      peers.delete(conn.peer);
+    }
+  });
+
+  if (!peerConnections.has(workspaceKey)) {
+    peerConnections.set(workspaceKey, new Map());
+  }
+  peerConnections.get(workspaceKey)!.set(conn.peer, conn);
+}
+
+export function disconnectWebRTC(workspaceKey: string) {
+  // Close all connections
+  const connections = peerConnections.get(workspaceKey);
+  if (connections) {
+    connections.forEach(conn => {
+      try {
+        conn.close();
+      } catch (error) {
+        console.error('Error closing connection:', error);
+      }
+    });
+    peerConnections.delete(workspaceKey);
+  }
+
+  // Destroy peer instance
+  const peer = peerInstances.get(workspaceKey);
+  if (peer) {
+    try {
+      peer.destroy();
+    } catch (error) {
+      console.error('Error destroying peer:', error);
+    }
+    peerInstances.delete(workspaceKey);
+  }
+
+  // Clear connected peers tracking
+  connectedPeers.delete(workspaceKey);
+
   clearWebRTCRetryTimers(workspaceKey);
-  console.log(`WebRTC sync disabled for workspace ${workspaceKey}`);
+  console.log(`Sync disabled for workspace ${workspaceKey}`);
 }
 
 function clearWebRTCRetryTimers(workspaceKey: string) {
@@ -578,25 +747,27 @@ export function getWebRTCStatus(workspaceKey: string): {
   signalingServer: string;
   retryCount: number;
 } {
-  const provider = webrtcProviders.get(workspaceKey);
+  const peer = peerInstances.get(workspaceKey);
+  const connections = peerConnections.get(workspaceKey);
   const retryCount = getWebRTCRetryCount(workspaceKey);
-  const servers = getSignalingServers(workspaceKey);
 
-  if (!provider) {
+  if (!peer || !peer.open) {
     return {
       connected: false,
       peers: 0,
       status: 'disconnected',
-      signalingServer: servers[0],
+      signalingServer: 'cloud.peerjs.com',
       retryCount,
     };
   }
 
+  const peerCount = connections ? connections.size : 0;
+
   return {
-    connected: provider.shouldConnect,
-    peers: (provider as any).awareness?.getStates?.()?.size || 0,
-    status: provider.shouldConnect ? 'connected' : 'disconnected',
-    signalingServer: servers[0],
+    connected: peerCount > 0,
+    peers: peerCount,
+    status: peerCount > 0 ? 'connected' : 'disconnected',
+    signalingServer: 'cloud.peerjs.com',
     retryCount,
   };
 }
