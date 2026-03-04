@@ -98,6 +98,9 @@ export function addItem(workspaceKey: string, itemName: string, qrData?: string)
   item.set('name', itemName);
   item.set('qrData', qrData || null);
   item.set('createdAt', new Date().toISOString());
+  item.set('title', itemName);
+  item.set('description', '');
+  item.set('contents', new Y.Map());
 
   objectsMap.set(itemId, item);
   return itemId;
@@ -124,6 +127,36 @@ export function getItems(workspaceKey: string) {
   return items;
 }
 
+export function findItemByQR(workspaceKey: string, qrData: string) {
+  if (!workspacesMap) throw new Error('Workspaces map not initialized');
+
+  const workspace = workspacesMap.get(workspaceKey) as Y.Map<any>;
+  if (!workspace) throw new Error('Workspace not found');
+
+  const objectsMap = workspace.get('objects') as Y.Map<any>;
+
+  for (const [id, item] of objectsMap) {
+    if ((item as Y.Map<any>).get('qrData') === qrData) {
+      return {
+        id,
+        name: (item as Y.Map<any>).get('name') as string,
+      };
+    }
+  }
+
+  // Check if QR data itself is a valid UUID format (matches an item ID)
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+  if (uuidRegex.test(qrData) && objectsMap.has(qrData)) {
+    const item = objectsMap.get(qrData) as Y.Map<any>;
+    return {
+      id: qrData,
+      name: item.get('name') as string,
+    };
+  }
+
+  return null;
+}
+
 export function deleteItem(workspaceKey: string, itemId: string) {
   if (!workspacesMap) throw new Error('Workspaces map not initialized');
 
@@ -132,6 +165,103 @@ export function deleteItem(workspaceKey: string, itemId: string) {
 
   const objectsMap = workspace.get('objects') as Y.Map<any>;
   objectsMap.delete(itemId);
+}
+
+export function getItem(workspaceKey: string, itemId: string) {
+  if (!workspacesMap) throw new Error('Workspaces map not initialized');
+
+  const workspace = workspacesMap.get(workspaceKey) as Y.Map<any>;
+  if (!workspace) throw new Error('Workspace not found');
+
+  const objectsMap = workspace.get('objects') as Y.Map<any>;
+  const item = objectsMap.get(itemId) as Y.Map<any>;
+  if (!item) throw new Error('Item not found');
+
+  return {
+    id: itemId,
+    name: item.get('name') as string,
+    title: item.get('title') as string,
+    description: item.get('description') as string,
+    qrData: item.get('qrData') as string | undefined,
+    createdAt: item.get('createdAt') as string,
+  };
+}
+
+export function updateItemProperty(workspaceKey: string, itemId: string, property: string, value: any) {
+  if (!workspacesMap) throw new Error('Workspaces map not initialized');
+
+  const workspace = workspacesMap.get(workspaceKey) as Y.Map<any>;
+  if (!workspace) throw new Error('Workspace not found');
+
+  const objectsMap = workspace.get('objects') as Y.Map<any>;
+  const item = objectsMap.get(itemId) as Y.Map<any>;
+  if (!item) throw new Error('Item not found');
+
+  item.set(property, value);
+}
+
+export function getItemContents(workspaceKey: string, itemId: string) {
+  if (!workspacesMap) throw new Error('Workspaces map not initialized');
+
+  const workspace = workspacesMap.get(workspaceKey) as Y.Map<any>;
+  if (!workspace) throw new Error('Workspace not found');
+
+  const objectsMap = workspace.get('objects') as Y.Map<any>;
+  const item = objectsMap.get(itemId) as Y.Map<any>;
+  if (!item) throw new Error('Item not found');
+
+  let contentsMap = item.get('contents') as Y.Map<any>;
+
+  // Initialize contents map if it doesn't exist (for items created before this feature)
+  if (!contentsMap) {
+    contentsMap = new Y.Map();
+    item.set('contents', contentsMap);
+  }
+
+  const contents: Array<{ id: string; name: string; quantity: number }> = [];
+
+  contentsMap.forEach((content, id) => {
+    contents.push({
+      id,
+      name: content.get('name') as string,
+      quantity: content.get('quantity') as number,
+    });
+  });
+
+  return contents;
+}
+
+export function addItemToContents(workspaceKey: string, containerId: string, itemId: string, itemName: string, quantity: number = 1) {
+  if (!workspacesMap) throw new Error('Workspaces map not initialized');
+
+  const workspace = workspacesMap.get(workspaceKey) as Y.Map<any>;
+  if (!workspace) throw new Error('Workspace not found');
+
+  const objectsMap = workspace.get('objects') as Y.Map<any>;
+  const container = objectsMap.get(containerId) as Y.Map<any>;
+  if (!container) throw new Error('Container not found');
+
+  const contentsMap = container.get('contents') as Y.Map<any>;
+
+  const content = new Y.Map();
+  content.set('name', itemName);
+  content.set('quantity', quantity);
+
+  contentsMap.set(itemId, content);
+}
+
+export function removeItemFromContents(workspaceKey: string, containerId: string, contentItemId: string) {
+  if (!workspacesMap) throw new Error('Workspaces map not initialized');
+
+  const workspace = workspacesMap.get(workspaceKey) as Y.Map<any>;
+  if (!workspace) throw new Error('Workspace not found');
+
+  const objectsMap = workspace.get('objects') as Y.Map<any>;
+  const container = objectsMap.get(containerId) as Y.Map<any>;
+  if (!container) throw new Error('Container not found');
+
+  const contentsMap = container.get('contents') as Y.Map<any>;
+  contentsMap.delete(contentItemId);
 }
 
 function generateUUID(): string {

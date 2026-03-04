@@ -1,6 +1,6 @@
 import { LitElement, html, css } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
-import { addItem } from '../services/storage.js';
+import { addItem, findItemByQR, deleteItem } from '../services/storage.js';
 import jsQR from 'jsqr';
 
 @customElement('add-remove-item')
@@ -150,6 +150,71 @@ export class AddRemoveItem extends LitElement {
       border-radius: 4px;
       font-size: 0.9rem;
     }
+
+    .mode-toggle {
+      display: flex;
+      gap: 0.5rem;
+      margin-bottom: 1rem;
+    }
+
+    .mode-btn {
+      flex: 1;
+      padding: 0.75rem;
+      border: 2px solid #ccc;
+      background-color: white;
+      color: #333;
+      border-radius: 4px;
+      cursor: pointer;
+      font-weight: bold;
+      transition: all 0.2s;
+    }
+
+    .mode-btn.active {
+      border-color: #007bff;
+      background-color: #007bff;
+      color: white;
+    }
+
+    .mode-btn.remove.active {
+      background-color: #dc3545;
+      border-color: #dc3545;
+    }
+
+    .toast {
+      position: fixed;
+      bottom: 1rem;
+      right: 1rem;
+      padding: 1rem 1.5rem;
+      border-radius: 4px;
+      color: white;
+      font-weight: bold;
+      animation: slideIn 0.3s ease-out;
+      z-index: 1000;
+      max-width: 300px;
+    }
+
+    .toast.success {
+      background-color: #28a745;
+    }
+
+    .toast.error {
+      background-color: #dc3545;
+    }
+
+    .toast.info {
+      background-color: #17a2b8;
+    }
+
+    @keyframes slideIn {
+      from {
+        transform: translateX(400px);
+        opacity: 0;
+      }
+      to {
+        transform: translateX(0);
+        opacity: 1;
+      }
+    }
   `;
 
   @property()
@@ -167,8 +232,18 @@ export class AddRemoveItem extends LitElement {
   @state()
   declare isScanning: boolean;
 
+  @state()
+  declare mode: 'add' | 'remove';
+
+  @state()
+  declare toastMessage: string;
+
+  @state()
+  declare toastType: 'success' | 'info' | 'error';
+
   private videoElement: HTMLVideoElement | null = null;
   private scanningInterval: number | null = null;
+  private audioContext: AudioContext | null = null;
 
   constructor() {
     super();
@@ -177,6 +252,9 @@ export class AddRemoveItem extends LitElement {
     this.successMessage = '';
     this.workspaceKey = '';
     this.isScanning = false;
+    this.mode = 'add';
+    this.toastMessage = '';
+    this.toastType = 'success';
   }
 
   disconnectedCallback() {
@@ -190,25 +268,47 @@ export class AddRemoveItem extends LitElement {
         <button class="secondary-btn" @click=${() => this.goBack()}>Back</button>
       </div>
       <div class="content">
-        <div class="success-message ${this.successMessage ? 'show' : ''}">
-          ${this.successMessage}
+        ${this.toastMessage ? html`
+          <div class="toast ${this.toastType}">
+            ${this.toastMessage}
+          </div>
+        ` : ''}
+
+        <div class="mode-toggle">
+          <button class="mode-btn ${this.mode === 'add' ? 'active' : ''}" @click=${() => this.setMode('add')}>
+            Add Items
+          </button>
+          <button class="mode-btn remove ${this.mode === 'remove' ? 'active' : ''}" @click=${() => this.setMode('remove')}>
+            Remove Items
+          </button>
         </div>
 
-        <div class="input-group">
-          <label>Item Name</label>
-          <input
-            type="text"
-            placeholder="Enter item name (will generate UUID)"
-            .value=${this.itemName}
-            @input=${(e: Event) => { this.itemName = (e.target as HTMLInputElement).value; }}
-            @keydown=${(e: KeyboardEvent) => { if (e.key === 'Enter') this.addManualItem(); }}
-          />
-        </div>
+        ${this.mode === 'add' ? html`
+          <div class="input-group">
+            <label>Item Name (Manual Entry)</label>
+            <input
+              type="text"
+              placeholder="Enter item name (will generate UUID)"
+              .value=${this.itemName}
+              @input=${(e: Event) => { this.itemName = (e.target as HTMLInputElement).value; }}
+              @keydown=${(e: KeyboardEvent) => { if (e.key === 'Enter') this.addManualItem(); }}
+            />
+          </div>
 
-        <div class="action-buttons">
-          <button @click=${() => this.addManualItem()}>Add Item</button>
-          <button @click=${() => this.toggleScanning()}>${this.isScanning ? 'Stop Scanning' : 'Scan QR Code'}</button>
-        </div>
+          <div class="action-buttons">
+            <button @click=${() => this.addManualItem()}>Add Item</button>
+            <button @click=${() => this.toggleScanning()}>${this.isScanning ? 'Stop Scanning' : 'Scan QR Code'}</button>
+          </div>
+        ` : html`
+          <div class="input-group">
+            <label>Quick Remove Mode</label>
+            <p style="color: #666; font-size: 0.9rem; margin: 0;">Scan QR codes to quickly remove items from this workspace</p>
+          </div>
+
+          <div class="action-buttons">
+            <button @click=${() => this.toggleScanning()}>${this.isScanning ? 'Stop Scanning' : 'Start Scanning'}</button>
+          </div>
+        `}
 
         ${this.isScanning ? html`
           <div class="input-group">
@@ -220,7 +320,7 @@ export class AddRemoveItem extends LitElement {
           </div>
         ` : ''}
 
-        ${this.qrData ? html`
+        ${this.mode === 'add' && this.qrData && !this.isScanning ? html`
           <div class="input-group">
             <label>Scanned QR Data</label>
             <div class="scan-result">${this.qrData}</div>
@@ -243,45 +343,52 @@ export class AddRemoveItem extends LitElement {
     }));
   }
 
+  private setMode(mode: 'add' | 'remove') {
+    this.mode = mode;
+    this.qrData = '';
+    this.itemName = '';
+  }
+
   private addManualItem() {
     if (!this.itemName.trim()) {
-      alert('Please enter an item name');
+      this.showToast('Please enter an item name', 'error');
       return;
     }
 
     if (!this.workspaceKey) {
-      alert('No workspace selected');
+      this.showToast('No workspace selected', 'error');
       return;
     }
 
     try {
       addItem(this.workspaceKey, this.itemName);
-      this.showSuccess(`Item "${this.itemName}" added successfully`);
+      this.showToast(`✓ "${this.itemName}" added`, 'success');
       this.itemName = '';
     } catch (error) {
-      alert(`Failed to add item: ${error}`);
+      this.showToast(`Failed to add item: ${error}`, 'error');
     }
   }
 
   private addScannedItem() {
     if (!this.itemName.trim()) {
-      alert('Please enter an item name');
+      this.showToast('Please enter an item name', 'error');
       return;
     }
 
     if (!this.workspaceKey) {
-      alert('No workspace selected');
+      this.showToast('No workspace selected', 'error');
       return;
     }
 
     try {
       addItem(this.workspaceKey, this.itemName, this.qrData);
-      this.showSuccess(`Item "${this.itemName}" with QR data added successfully`);
+      this.showToast(`✓ "${this.itemName}" added with QR`, 'success');
       this.itemName = '';
       this.qrData = '';
-      this.stopScanning();
+      // Keep scanning active for fast entry
+      this.startScanning();
     } catch (error) {
-      alert(`Failed to add item: ${error}`);
+      this.showToast(`Failed to add item: ${error}`, 'error');
     }
   }
 
@@ -290,6 +397,58 @@ export class AddRemoveItem extends LitElement {
       this.stopScanning();
     } else {
       this.startScanning();
+    }
+  }
+
+  private handleQRScan(qrData: string) {
+    if (this.mode === 'add') {
+      this.handleAddMode(qrData);
+    } else {
+      this.handleRemoveMode(qrData);
+    }
+  }
+
+  private handleAddMode(qrData: string) {
+    try {
+      const existingItem = findItemByQR(this.workspaceKey, qrData);
+
+      if (existingItem) {
+        // Item already exists, just show toast
+        this.showToast(`✓ ${existingItem.name} (already exists)`, 'info');
+        // Keep scanning
+        if (this.isScanning && this.videoElement) {
+          this.startQRScanning();
+        }
+      } else {
+        // New item, stop scanning and prompt for name
+        this.stopScanning();
+        this.qrData = qrData;
+      }
+    } catch (error) {
+      this.showToast(`Error scanning: ${error}`, 'error');
+    }
+  }
+
+  private handleRemoveMode(qrData: string) {
+    try {
+      const itemToRemove = findItemByQR(this.workspaceKey, qrData);
+
+      if (itemToRemove) {
+        deleteItem(this.workspaceKey, itemToRemove.id);
+        this.showToast(`✓ "${itemToRemove.name}" removed`, 'success');
+        // Keep scanning for rapid removal
+        if (this.isScanning && this.videoElement) {
+          this.startQRScanning();
+        }
+      } else {
+        this.showToast('QR code not found in inventory', 'error');
+        // Keep scanning
+        if (this.isScanning && this.videoElement) {
+          this.startQRScanning();
+        }
+      }
+    } catch (error) {
+      this.showToast(`Error removing item: ${error}`, 'error');
     }
   }
 
@@ -345,9 +504,8 @@ export class AddRemoveItem extends LitElement {
         const code = jsQR(imageData.data, canvas.width, canvas.height);
 
         if (code) {
-          this.qrData = code.data;
-          this.stopScanning();
-          this.showSuccess('QR code scanned successfully!');
+          // Use smart mode handling instead of stopping scan
+          this.handleQRScan(code.data);
           return;
         }
       }
@@ -367,6 +525,40 @@ export class AddRemoveItem extends LitElement {
     setTimeout(() => {
       this.successMessage = '';
     }, 3000);
+  }
+
+  private showToast(message: string, type: 'success' | 'error' | 'info' = 'success') {
+    this.toastMessage = message;
+    this.toastType = type;
+    this.playFeedback();
+    setTimeout(() => {
+      this.toastMessage = '';
+    }, 2500);
+  }
+
+  private playFeedback() {
+    // Play scan sound
+    this.playSound();
+    // Vibrate if available
+    this.vibrate();
+  }
+
+  private playSound() {
+    try {
+      const audio = new Audio('/assets/185828__lloydevans09__little-thing.opus');
+      audio.volume = 0.3;
+      audio.play().catch(() => {
+        // Silently fail if audio can't play
+      });
+    } catch (error) {
+      // Silently fail if audio API unavailable
+    }
+  }
+
+  private vibrate() {
+    if (navigator.vibrate) {
+      navigator.vibrate(50);
+    }
   }
 }
 

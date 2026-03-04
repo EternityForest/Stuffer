@@ -33,17 +33,22 @@ export class AppShell extends LitElement {
   @state()
   declare selectedObject: string | null;
 
+  @state()
+  declare navigateContext: any;
+
   constructor() {
     super();
     this.currentScreen = 'workspace-selector';
     this.currentWorkspace = null;
     this.selectedObject = null;
+    this.navigateContext = null;
   }
 
-  navigateTo(screen: Screen, context?: { workspace?: string; object?: string }) {
+  navigateTo(screen: Screen, context?: { workspace?: string; object?: string; containerId?: string; mode?: string }) {
     this.currentScreen = screen;
     if (context?.workspace) this.currentWorkspace = context.workspace;
     if (context?.object) this.selectedObject = context.object;
+    this.navigateContext = context || null;
   }
 
   render() {
@@ -68,10 +73,16 @@ export class AppShell extends LitElement {
       case 'object-inspect':
         return html`<object-inspect
           .objectId=${this.selectedObject}
+          .workspaceKey=${this.currentWorkspace}
           @navigate=${this.onNavigate}
         ></object-inspect>`;
       case 'list-browser':
-        return html`<list-browser @navigate=${this.onNavigate}></list-browser>`;
+        return html`<list-browser
+          .workspaceKey=${this.currentWorkspace}
+          .containerId=${(this.navigateContext?.containerId as string) || ''}
+          .mode=${(this.navigateContext?.mode as 'add-to-contents' | 'remove-from-contents' | 'loadout') || 'loadout'}
+          @navigate=${this.onNavigate}
+        ></list-browser>`;
       case 'add-remove-item':
         return html`<add-remove-item
           .workspaceKey=${this.currentWorkspace}
