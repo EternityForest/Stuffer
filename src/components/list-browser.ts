@@ -330,9 +330,11 @@ export class ListBrowser extends LitElement {
       const quantity = this.selectedQuantities.get(itemId) || 1;
       addItemToContents(this.workspaceKey, this.containerId, itemId, itemName, quantity);
       this.selectedQuantities.delete(itemId);
-      this.requestUpdate();
+      this.showToast(`✓ Added ${itemName}`, 'success');
+      // No need to reload since the item list doesn't change in add mode
     } catch (error) {
       console.error('Failed to add item to container:', error);
+      this.showToast('Failed to add item', 'error');
     }
   }
 
@@ -341,7 +343,8 @@ export class ListBrowser extends LitElement {
 
     try {
       removeItemFromContents(this.workspaceKey, this.containerId, itemId);
-      this.requestUpdate();
+      this.loadItems();
+      this.showToast('✓ Removed', 'success');
     } catch (error) {
       console.error('Failed to remove item from container:', error);
     }

@@ -184,6 +184,7 @@ export function getItem(workspaceKey: string, itemId: string) {
     description: item.get('description') as string,
     qrData: item.get('qrData') as string | undefined,
     createdAt: item.get('createdAt') as string,
+    imageData: item.get('imageData') as string | undefined,
   };
 }
 

@@ -1,6 +1,7 @@
 import { LitElement, html, css } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { getItem, updateItemProperty, getItemContents } from '../services/storage.js';
+import { compressImage } from '../services/imageCompression.js';
 
 @customElement('object-inspect')
 export class ObjectInspect extends LitElement {
@@ -128,6 +129,20 @@ export class ObjectInspect extends LitElement {
     h2 {
       margin-top: 0;
     }
+
+    .image-preview {
+      margin-top: 1rem;
+      max-width: 100%;
+      max-height: 300px;
+      border-radius: 4px;
+      object-fit: contain;
+    }
+
+    .image-upload-status {
+      margin-top: 0.5rem;
+      font-size: 0.9rem;
+      color: #666;
+    }
   `;
 
   @property()
@@ -145,6 +160,12 @@ export class ObjectInspect extends LitElement {
   @state()
   declare contents: Array<{ id: string; name: string; quantity: number }>;
 
+  @state()
+  declare imageData: string | null;
+
+  @state()
+  declare isUploadingImage: boolean;
+
   constructor() {
     super();
     this.objectId = '';
@@ -152,6 +173,8 @@ export class ObjectInspect extends LitElement {
     this.title = '';
     this.description = '';
     this.contents = [];
+    this.imageData = null;
+    this.isUploadingImage = false;
   }
 
   connectedCallback() {
@@ -172,6 +195,7 @@ export class ObjectInspect extends LitElement {
       const item = getItem(this.workspaceKey, this.objectId);
       this.title = item.title;
       this.description = item.description;
+      this.imageData = (item as any).imageData || null;
       this.loadContents();
     } catch (error) {
       console.error('Failed to load item:', error);
@@ -207,6 +231,25 @@ export class ObjectInspect extends LitElement {
     }
   }
 
+  private async handleImageUpload(e: Event) {
+    const input = e.target as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file) return;
+
+    this.isUploadingImage = true;
+    try {
+      const compressedDataUrl = await compressImage(file);
+      this.imageData = compressedDataUrl;
+      updateItemProperty(this.workspaceKey, this.objectId, 'imageData', compressedDataUrl);
+    } catch (error) {
+      console.error('Failed to compress and save image:', error);
+    } finally {
+      this.isUploadingImage = false;
+      // Clear the file input
+      input.value = '';
+    }
+  }
+
   render() {
     return html`
       <div class="header">
@@ -224,7 +267,9 @@ export class ObjectInspect extends LitElement {
         </div>
         <div class="property">
           <label>Image</label>
-          <input type="file" accept="image/*" />
+          <input type="file" accept="image/*" @change=${(e: Event) => this.handleImageUpload(e)} ${this.isUploadingImage ? 'disabled' : ''} />
+          ${this.isUploadingImage ? html`<div class="image-upload-status">Compressing image...</div>` : ''}
+          ${this.imageData ? html`<img src=${this.imageData} alt="Item image" class="image-preview" />` : ''}
         </div>
         <div class="property">
           <label>Loadout</label>
