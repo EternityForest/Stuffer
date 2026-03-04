@@ -8,6 +8,7 @@ import './components/object-inspect.js';
 import './components/list-browser.js';
 import './components/add-remove-item.js';
 import './components/loadouts-manager.js';
+import './components/workspace-settings.js';
 
 @customElement('stuffer-app')
 class StufferApp extends LitElement {

@@ -1,7 +1,7 @@
 import { LitElement, html, css } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
 
-type Screen = 'workspace-selector' | 'workspace-browser' | 'object-inspect' | 'list-browser' | 'add-remove-item' | 'loadouts-manager';
+type Screen = 'workspace-selector' | 'workspace-browser' | 'object-inspect' | 'list-browser' | 'add-remove-item' | 'loadouts-manager' | 'workspace-settings';
 
 @customElement('app-shell')
 export class AppShell extends LitElement {
@@ -90,6 +90,11 @@ export class AppShell extends LitElement {
           .workspaceKey=${this.currentWorkspace}
           @navigate=${this.onNavigate}
         ></loadouts-manager>`;
+      case 'workspace-settings':
+        return html`<workspace-settings
+          .workspaceKey=${this.currentWorkspace}
+          @navigate=${this.onNavigate}
+        ></workspace-settings>`;
       case 'add-remove-item':
         return html`<add-remove-item
           .workspaceKey=${this.currentWorkspace}

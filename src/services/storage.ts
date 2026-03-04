@@ -1,9 +1,22 @@
 import * as Y from 'yjs';
 import { IndexeddbPersistence } from 'y-indexeddb';
+import { WebrtcProvider } from 'y-webrtc';
+import {
+  getSyncRoomKey,
+  setSyncRoomKey,
+  getSignalingServers,
+  getWebRTCRetryDelay,
+  getWebRTCRetryCount,
+  recordWebRTCConnectionAttempt,
+  recordWebRTCError,
+  clearWebRTCRetryCount,
+} from './local-settings.js';
 
 let yDoc: Y.Doc | null = null;
 let workspacesMap: Y.Map<any> | null = null;
 let initPromise: Promise<Y.Doc> | null = null;
+
+const webrtcProviders = new Map<string, WebrtcProvider>();
 
 export async function initializeYDoc() {
   if (yDoc && workspacesMap) return yDoc;
@@ -459,15 +472,164 @@ function generateUUID(): string {
   });
 }
 
-export function enableWebRTC(roomName: string, signalingServers: string[] = []) {
-  if (!yDoc) throw new Error('YDoc not initialized');
+const webrtcRetryTimers = new Map<string, number>();
 
-  // WebRTC sync setup will be implemented when needed
-  // For now, IndexedDB persistence provides offline support
-  console.log('WebRTC sync for room:', roomName);
+export function enableWebRTC(workspaceKey: string, signalingServers: string[] = []) {
+  if (!yDoc) throw new Error('YDoc not initialized');
+  if (!workspacesMap) throw new Error('Workspaces map not initialized');
+
+  // Disconnect any existing provider
+  if (webrtcProviders.has(workspaceKey)) {
+    disconnectWebRTC(workspaceKey);
+  }
+
+  try {
+    const workspace = workspacesMap.get(workspaceKey) as Y.Map<any>;
+    if (!workspace) throw new Error('Workspace not found');
+
+    // Use room key from local settings, not from synced workspace
+    const roomName = getSyncRoomKey(workspaceKey);
+
+    // Just don't even try right now till we actually make it work
+    return null as any;
+
+    if (!roomName || roomName.trim() === '') {
+      console.log(`Skipping WebRTC sync for workspace ${workspaceKey}: sync key is empty`);
+      return null as any;
+    }
+
+    const servers = signalingServers.length > 0 ? signalingServers : getSignalingServers(workspaceKey);
+
+    const provider = new WebrtcProvider(roomName, yDoc, {
+      signaling: servers,
+      maxConns: 20,
+      filterBcConns: true,
+    });
+
+    // Clear retry count on successful connection
+    provider.on('status', ({ connected }: { connected: boolean }) => {
+      if (connected) {
+        clearWebRTCRetryCount(workspaceKey);
+      }
+    });
+
+    // Store provider for later cleanup
+    webrtcProviders.set(workspaceKey, provider);
+    clearWebRTCRetryTimers(workspaceKey);
+
+    console.log(`WebRTC sync enabled for workspace ${workspaceKey} (room: ${roomName})`);
+    return provider;
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    recordWebRTCError(workspaceKey, errorMsg);
+    console.error('Failed to enable WebRTC:', error);
+
+    // Schedule retry with exponential backoff
+    scheduleWebRTCRetry(workspaceKey);
+    throw error;
+  }
+}
+
+export function disconnectWebRTC(workspaceKey: string) {
+  const provider = webrtcProviders.get(workspaceKey);
+  if (provider) {
+    provider.destroy();
+    webrtcProviders.delete(workspaceKey);
+  }
+  clearWebRTCRetryTimers(workspaceKey);
+  console.log(`WebRTC sync disabled for workspace ${workspaceKey}`);
+}
+
+function clearWebRTCRetryTimers(workspaceKey: string) {
+  const timer = webrtcRetryTimers.get(workspaceKey);
+  if (timer) {
+    clearTimeout(timer);
+    webrtcRetryTimers.delete(workspaceKey);
+  }
+}
+
+function scheduleWebRTCRetry(workspaceKey: string) {
+  // Clear any existing retry timer
+  clearWebRTCRetryTimers(workspaceKey);
+
+  const retryCount = recordWebRTCConnectionAttempt(workspaceKey);
+  const delayMs = getWebRTCRetryDelay(retryCount);
+
+  console.log(`Scheduling WebRTC retry for ${workspaceKey} in ${Math.round(delayMs)}ms (attempt ${retryCount})`);
+
+  const timer = window.setTimeout(() => {
+    webrtcRetryTimers.delete(workspaceKey);
+    console.log(`Attempting WebRTC reconnect for ${workspaceKey} (attempt ${retryCount})`);
+    try {
+      enableWebRTC(workspaceKey);
+    } catch (error) {
+      console.error('WebRTC retry failed, will try again:', error);
+      // Already scheduled another retry in enableWebRTC
+    }
+  }, delayMs);
+
+  webrtcRetryTimers.set(workspaceKey, timer);
+}
+
+export function getWebRTCStatus(workspaceKey: string): {
+  connected: boolean;
+  peers: number;
+  status: string;
+  signalingServer: string;
+  retryCount: number;
+} {
+  const provider = webrtcProviders.get(workspaceKey);
+  const retryCount = getWebRTCRetryCount(workspaceKey);
+  const servers = getSignalingServers(workspaceKey);
+
+  if (!provider) {
+    return {
+      connected: false,
+      peers: 0,
+      status: 'disconnected',
+      signalingServer: servers[0],
+      retryCount,
+    };
+  }
 
   return {
-    connect: () => console.log('WebRTC connected'),
-    disconnect: () => console.log('WebRTC disconnected'),
+    connected: provider.shouldConnect,
+    peers: (provider as any).awareness?.getStates?.()?.size || 0,
+    status: provider.shouldConnect ? 'connected' : 'disconnected',
+    signalingServer: servers[0],
+    retryCount,
   };
+}
+
+export function updateWorkspaceSyncKey(workspaceKey: string, newSyncKey: string) {
+  if (!workspacesMap) throw new Error('Workspaces map not initialized');
+
+  const workspace = workspacesMap.get(workspaceKey) as Y.Map<any>;
+  if (!workspace) throw new Error('Workspace not found');
+
+  // Save to local settings, not to synced workspace
+  setSyncRoomKey(workspaceKey, newSyncKey);
+
+  // Reconnect with new room
+  try {
+    disconnectWebRTC(workspaceKey);
+    enableWebRTC(workspaceKey);
+  } catch (error) {
+    console.error('Failed to reconnect WebRTC after sync key change:', error);
+  }
+}
+
+export function updateWorkspaceProperty(workspaceKey: string, property: string, value: any) {
+  if (!workspacesMap) throw new Error('Workspaces map not initialized');
+
+  const workspace = workspacesMap.get(workspaceKey) as Y.Map<any>;
+  if (!workspace) throw new Error('Workspace not found');
+
+  // Don't sync syncRoomKey through the shared workspace
+  if (property === 'syncRoomKey') {
+    console.warn('Use updateWorkspaceSyncKey() instead of updateWorkspaceProperty() for syncRoomKey');
+    return updateWorkspaceSyncKey(workspaceKey, value);
+  }
+
+  workspace.set(property, value);
 }
