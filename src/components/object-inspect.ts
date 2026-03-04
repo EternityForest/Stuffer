@@ -374,12 +374,22 @@ export class ObjectInspect extends LitElement {
             <div style="margin-bottom: 1rem; padding: 0.75rem; background-color: #f8f9fa; border-radius: 4px; font-size: 0.9rem;">
               ${this.missingItems.length > 0 ? html`
                 <div style="color: #856404; margin-bottom: 0.5rem;">
-                  ⚠️ Missing ${this.missingItems.length} item${this.missingItems.length !== 1 ? 's' : ''} from loadout
+                  <div style="font-weight: bold; margin-bottom: 0.25rem;">⚠️ Missing from loadout:</div>
+                  <div style="margin-left: 1rem;">
+                    ${this.missingItems.map(item => html`
+                      <div>${item.name} (qty: ${item.quantity})</div>
+                    `)}
+                  </div>
                 </div>
               ` : ''}
               ${this.extraItems.length > 0 ? html`
                 <div style="color: #004085;">
-                  ℹ️ ${this.extraItems.length} extra item${this.extraItems.length !== 1 ? 's' : ''} not in loadout
+                  <div style="font-weight: bold; margin-bottom: 0.25rem;">ℹ️ Extra items not in loadout:</div>
+                  <div style="margin-left: 1rem;">
+                    ${this.extraItems.map(item => html`
+                      <div>${item.name} (qty: ${item.quantity})</div>
+                    `)}
+                  </div>
                 </div>
               ` : ''}
             </div>
