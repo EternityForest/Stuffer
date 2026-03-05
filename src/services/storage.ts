@@ -193,6 +193,9 @@ export function getItem(workspaceKey: string, itemId: string) {
     createdAt: item.get("createdAt") as string,
     imageData: item.get("imageData") as string | undefined,
     selectedLoadout: item.get("selectedLoadout") as string | null,
+    lastScannedAt: item.get("lastScannedAt") as string | undefined,
+    lastScannedLatitude: item.get("lastScannedLatitude") as number | undefined,
+    lastScannedLongitude: item.get("lastScannedLongitude") as number | undefined,
   };
 }
 
@@ -268,6 +271,14 @@ export function addItemToContents(
   const objectsMap = workspace.get("objects") as Y.Map<any>;
   const container = objectsMap.get(containerId) as Y.Map<any>;
   if (!container) throw new Error("Container not found");
+
+  // Remove item from any other containers first
+  objectsMap.forEach((item) => {
+    const itemContentsMap = item.get("contents") as Y.Map<any>;
+    if (itemContentsMap && itemContentsMap.has(itemId)) {
+      itemContentsMap.delete(itemId);
+    }
+  });
 
   const contentsMap = container.get("contents") as Y.Map<any>;
 
@@ -440,6 +451,14 @@ export function addItemToLoadout(
   const loadoutsMap = workspace.get("loadouts") as Y.Map<any>;
   const loadout = loadoutsMap.get(loadoutId) as Y.Map<any>;
   if (!loadout) throw new Error("Loadout not found");
+
+  // Remove item from any other loadouts first
+  loadoutsMap.forEach((otherLoadout) => {
+    const otherContentsMap = (otherLoadout as Y.Map<any>).get("contents") as Y.Map<any>;
+    if (otherContentsMap && otherContentsMap.has(itemId)) {
+      otherContentsMap.delete(itemId);
+    }
+  });
 
   const contentsMap = loadout.get("contents") as Y.Map<any>;
 
@@ -1146,5 +1165,27 @@ export async function calculateCurrentAmount(workspaceKey: string, itemId: strin
   } catch (error) {
     console.error("Failed to calculate amount:", error);
     return { amount: 0, unit: "", error: "Failed to calculate amount" };
+  }
+}
+
+export function updateLastScanned(
+  workspaceKey: string,
+  itemId: string,
+  latitude?: number,
+  longitude?: number
+) {
+  if (!workspacesMap) throw new Error("Workspaces map not initialized");
+
+  const workspace = workspacesMap.get(workspaceKey) as Y.Map<any>;
+  if (!workspace) throw new Error("Workspace not found");
+
+  const objectsMap = workspace.get("objects") as Y.Map<any>;
+  const item = objectsMap.get(itemId) as Y.Map<any>;
+  if (!item) throw new Error("Item not found");
+
+  item.set("lastScannedAt", new Date().toISOString());
+  if (latitude !== undefined && longitude !== undefined) {
+    item.set("lastScannedLatitude", latitude);
+    item.set("lastScannedLongitude", longitude);
   }
 }

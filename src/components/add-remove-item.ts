@@ -1,9 +1,14 @@
-import { LitElement, html, css } from 'lit';
-import { customElement, property, state } from 'lit/decorators.js';
-import { addItem, findItemById, deleteItem } from '../services/storage.js';
-import jsQR from 'jsqr';
+import { LitElement, html, css } from "lit";
+import { customElement, property, state } from "lit/decorators.js";
+import {
+  addItem,
+  findItemById,
+  deleteItem,
+  updateLastScanned,
+} from "../services/storage.js";
+import jsQR from "jsqr";
 
-@customElement('add-remove-item')
+@customElement("add-remove-item")
 export class AddRemoveItem extends LitElement {
   static createRenderRoot() {
     return this;
@@ -233,13 +238,13 @@ export class AddRemoveItem extends LitElement {
   declare isScanning: boolean;
 
   @state()
-  declare mode: 'add' | 'remove';
+  declare mode: "add" | "remove";
 
   @state()
   declare toastMessage: string;
 
   @state()
-  declare toastType: 'success' | 'info' | 'error';
+  declare toastType: "success" | "info" | "error";
 
   private videoElement: HTMLVideoElement | null = null;
   private scanningInterval: number | null = null;
@@ -247,14 +252,14 @@ export class AddRemoveItem extends LitElement {
 
   constructor() {
     super();
-    this.itemName = '';
-    this.qrData = '';
-    this.successMessage = '';
-    this.workspaceKey = '';
+    this.itemName = "";
+    this.qrData = "";
+    this.successMessage = "";
+    this.workspaceKey = "";
     this.isScanning = false;
-    this.mode = 'add';
-    this.toastMessage = '';
-    this.toastType = 'success';
+    this.mode = "add";
+    this.toastMessage = "";
+    this.toastType = "success";
   }
 
   disconnectedCallback() {
@@ -265,121 +270,148 @@ export class AddRemoveItem extends LitElement {
   render() {
     return html`
       <div class="header">
-        <button class="secondary-btn" @click=${() => this.goBack()}>Back</button>
+        <button class="secondary-btn" @click=${() => this.goBack()}>
+          Back
+        </button>
       </div>
       <div class="content">
-        ${this.toastMessage ? html`
-          <div class="toast ${this.toastType}">
-            ${this.toastMessage}
-          </div>
-        ` : ''}
+        ${this.toastMessage
+          ? html`
+              <div class="toast ${this.toastType}">${this.toastMessage}</div>
+            `
+          : ""}
 
         <div class="mode-toggle">
-          <button class="mode-btn ${this.mode === 'add' ? 'active' : ''}" @click=${() => this.setMode('add')}>
+          <button
+            class="mode-btn ${this.mode === "add" ? "active" : ""}"
+            @click=${() => this.setMode("add")}
+          >
             Add Items
           </button>
-          <button class="mode-btn remove ${this.mode === 'remove' ? 'active' : ''}" @click=${() => this.setMode('remove')}>
+          <button
+            class="mode-btn remove ${this.mode === "remove" ? "active" : ""}"
+            @click=${() => this.setMode("remove")}
+          >
             Remove Items
           </button>
         </div>
 
-        ${this.mode === 'add' ? html`
-          <div class="input-group">
-            <label>Item Name (Manual Entry)</label>
-            <input
-              type="text"
-              placeholder="Enter item name (will generate UUID)"
-              .value=${this.itemName}
-              @input=${(e: Event) => { this.itemName = (e.target as HTMLInputElement).value; }}
-              @keydown=${(e: KeyboardEvent) => { if (e.key === 'Enter') this.addScannedItem(); }}
-            />
-          </div>
+        ${this.mode === "add"
+          ? html`
+              <div class="input-group">
+                <label>Item Name (Manual Entry)</label>
+                <input
+                  type="text"
+                  placeholder="Enter item name (will generate UUID)"
+                  .value=${this.itemName}
+                  @input=${(e: Event) => {
+                    this.itemName = (e.target as HTMLInputElement).value;
+                  }}
+                  @keydown=${(e: KeyboardEvent) => {
+                    if (e.key === "Enter") this.addScannedItem();
+                  }}
+                />
+              </div>
 
-          <div class="input-group">
-            <label>Item ID</label>
+              <div class="input-group">
+                <label>Item ID</label>
 
-            <input
-              type="text"
-              placeholder="Auto generate UUID"
-              .value=${this.qrData}
-              @input=${(e: Event) => { this.qrData = (e.target as HTMLInputElement).value; }}
-            />
-          </div>
+                <input
+                  type="text"
+                  placeholder="Auto generate UUID"
+                  .value=${this.qrData}
+                  @input=${(e: Event) => {
+                    this.qrData = (e.target as HTMLInputElement).value;
+                  }}
+                />
+              </div>
 
-          <div class="action-buttons">
-            <button @click=${() => this.addScannedItem()}>Add Item</button>
-            <button @click=${() => this.toggleScanning()}>${this.isScanning ? 'Stop Scanning' : 'Scan QR Code'}</button>
-          </div>
-        ` : html`
-          <div class="input-group">
-            <label>Quick Remove Mode</label>
-            <p style="color: #666; font-size: 0.9rem; margin: 0;">Scan QR codes to quickly remove items from this workspace</p>
-          </div>
+              <div class="action-buttons">
+                <button @click=${() => this.addScannedItem()}>Add Item</button>
+                <button @click=${() => this.toggleScanning()}>
+                  ${this.isScanning ? "Stop Scanning" : "Scan QR Code"}
+                </button>
+              </div>
+            `
+          : html`
+              <div class="input-group">
+                <label>Quick Remove Mode</label>
+                <p style="color: #666; font-size: 0.9rem; margin: 0;">
+                  Scan QR codes to quickly remove items from this workspace
+                </p>
+              </div>
 
-          <div class="action-buttons">
-            <button @click=${() => this.toggleScanning()}>${this.isScanning ? 'Stop Scanning' : 'Start Scanning'}</button>
-          </div>
-        `}
-
-        ${this.isScanning ? html`
-          <div class="input-group">
-            <label>QR Scanner</label>
-            <div class="scan-container">
-              <video id="qr-video"></video>
-              <div class="scanning-indicator">Scanning...</div>
-            </div>
-          </div>
-        ` : ''}
-
-        ${this.mode === 'add' && this.qrData && !this.isScanning ? html`
-          <div class="action-buttons">
-            <button class="secondary-btn" @click=${() => this.clearScan()}>Clear Scan</button>
-          </div>
-        ` : ''}
+              <div class="action-buttons">
+                <button @click=${() => this.toggleScanning()}>
+                  ${this.isScanning ? "Stop Scanning" : "Start Scanning"}
+                </button>
+              </div>
+            `}
+        ${this.isScanning
+          ? html`
+              <div class="input-group">
+                <label>QR Scanner</label>
+                <div class="scan-container">
+                  <video id="qr-video"></video>
+                  <div class="scanning-indicator">Scanning...</div>
+                </div>
+              </div>
+            `
+          : ""}
+        ${this.mode === "add" && this.qrData && !this.isScanning
+          ? html`
+              <div class="action-buttons">
+                <button class="secondary-btn" @click=${() => this.clearScan()}>
+                  Clear Scan
+                </button>
+              </div>
+            `
+          : ""}
       </div>
     `;
   }
 
   private goBack() {
     this.stopScanning();
-    this.dispatchEvent(new CustomEvent('navigate', {
-      detail: { screen: 'workspace-browser' },
-      bubbles: true,
-      composed: true,
-    }));
+    this.dispatchEvent(
+      new CustomEvent("navigate", {
+        detail: { screen: "workspace-browser" },
+        bubbles: true,
+        composed: true,
+      })
+    );
   }
 
-  private setMode(mode: 'add' | 'remove') {
+  private setMode(mode: "add" | "remove") {
     this.mode = mode;
-    this.qrData = '';
-    this.itemName = '';
+    this.qrData = "";
+    this.itemName = "";
   }
 
   private addScannedItem() {
     if (!this.itemName.trim()) {
-      this.showToast('Please enter an item name', 'error');
+      this.showToast("Please enter an item name", "error");
       return;
     }
 
     if (!this.workspaceKey) {
-      this.showToast('No workspace selected', 'error');
+      this.showToast("No workspace selected", "error");
       return;
     }
 
     try {
-      if(this.qrData.trim().length > 0) {
+      if (this.qrData.trim().length > 0) {
         addItem(this.workspaceKey, this.itemName, this.qrData);
-      }
-      else {
+      } else {
         addItem(this.workspaceKey, this.itemName);
       }
-      this.showToast(`✓ "${this.itemName}" added`, 'success');
-      this.itemName = '';
-      this.qrData = '';
+      this.showToast(`✓ "${this.itemName}" added`, "success");
+      this.itemName = "";
+      this.qrData = "";
       // Keep scanning active for fast entry
       this.startScanning();
     } catch (error) {
-      this.showToast(`Failed to add item: ${error}`, 'error');
+      this.showToast(`Failed to add item: ${error}`, "error");
     }
   }
 
@@ -392,7 +424,24 @@ export class AddRemoveItem extends LitElement {
   }
 
   private handleQRScan(qrData: string) {
-    if (this.mode === 'add') {
+    // Basic usage to get location
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          updateLastScanned(
+            this.workspaceKey,
+            qrData,
+            position.coords.latitude,
+            position.coords.longitude
+          );
+        },
+        (error) => console.error(error)
+      );
+    } else {
+      updateLastScanned(this.workspaceKey, qrData, 0, 0);
+    }
+
+    if (this.mode === "add") {
       this.handleAddMode(qrData);
     } else {
       this.handleRemoveMode(qrData);
@@ -405,7 +454,7 @@ export class AddRemoveItem extends LitElement {
 
       if (existingItem) {
         // Item already exists, just show toast
-        this.showToast(`✓ ${existingItem.name} (already exists)`, 'info');
+        this.showToast(`✓ ${existingItem.name} (already exists)`, "info");
         // Keep scanning
         if (this.isScanning && this.videoElement) {
           this.startQRScanning();
@@ -416,7 +465,7 @@ export class AddRemoveItem extends LitElement {
         this.qrData = qrData;
       }
     } catch (error) {
-      this.showToast(`Error scanning: ${error}`, 'error');
+      this.showToast(`Error scanning: ${error}`, "error");
     }
   }
 
@@ -426,34 +475,36 @@ export class AddRemoveItem extends LitElement {
 
       if (itemToRemove) {
         deleteItem(this.workspaceKey, itemToRemove.id);
-        this.showToast(`✓ "${itemToRemove.name}" removed`, 'success');
+        this.showToast(`✓ "${itemToRemove.name}" removed`, "success");
         // Keep scanning for rapid removal
         if (this.isScanning && this.videoElement) {
           this.startQRScanning();
         }
       } else {
-        this.showToast('QR code not found in inventory', 'error');
+        this.showToast("QR code not found in inventory", "error");
         // Keep scanning
         if (this.isScanning && this.videoElement) {
           this.startQRScanning();
         }
       }
     } catch (error) {
-      this.showToast(`Error removing item: ${error}`, 'error');
+      this.showToast(`Error removing item: ${error}`, "error");
     }
   }
 
   private async startScanning() {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'environment' },
+        video: { facingMode: "environment" },
       });
 
       this.isScanning = true;
       this.requestUpdate();
 
       setTimeout(() => {
-        this.videoElement = this.shadowRoot?.querySelector('#qr-video') as HTMLVideoElement;
+        this.videoElement = this.shadowRoot?.querySelector(
+          "#qr-video"
+        ) as HTMLVideoElement;
         if (this.videoElement) {
           this.videoElement.srcObject = stream;
           this.videoElement.play();
@@ -470,7 +521,7 @@ export class AddRemoveItem extends LitElement {
     this.isScanning = false;
     if (this.videoElement?.srcObject) {
       const tracks = (this.videoElement.srcObject as MediaStream).getTracks();
-      tracks.forEach(track => track.stop());
+      tracks.forEach((track) => track.stop());
       this.videoElement.srcObject = null;
     }
     if (this.scanningInterval !== null) {
@@ -480,8 +531,8 @@ export class AddRemoveItem extends LitElement {
   }
 
   private startQRScanning() {
-    const canvas = document.createElement('canvas');
-    const ctx = canvas.getContext('2d');
+    const canvas = document.createElement("canvas");
+    const ctx = canvas.getContext("2d");
 
     const scanFrame = () => {
       if (!this.isScanning || !this.videoElement || !ctx) return;
@@ -508,22 +559,25 @@ export class AddRemoveItem extends LitElement {
   }
 
   private clearScan() {
-    this.qrData = '';
+    this.qrData = "";
   }
 
   private showSuccess(message: string) {
     this.successMessage = message;
     setTimeout(() => {
-      this.successMessage = '';
+      this.successMessage = "";
     }, 3000);
   }
 
-  private showToast(message: string, type: 'success' | 'error' | 'info' = 'success') {
+  private showToast(
+    message: string,
+    type: "success" | "error" | "info" = "success"
+  ) {
     this.toastMessage = message;
     this.toastType = type;
     this.playFeedback();
     setTimeout(() => {
-      this.toastMessage = '';
+      this.toastMessage = "";
     }, 2500);
   }
 
@@ -536,7 +590,9 @@ export class AddRemoveItem extends LitElement {
 
   private playSound() {
     try {
-      const audio = new Audio('/assets/185828__lloydevans09__little-thing.opus');
+      const audio = new Audio(
+        "/assets/185828__lloydevans09__little-thing.opus"
+      );
       audio.volume = 0.3;
       audio.play().catch(() => {
         // Silently fail if audio can't play
@@ -555,6 +611,6 @@ export class AddRemoveItem extends LitElement {
 
 declare global {
   interface HTMLElementTagNameMap {
-    'add-remove-item': AddRemoveItem;
+    "add-remove-item": AddRemoveItem;
   }
 }
