@@ -639,7 +639,7 @@ export class ListBrowser extends LitElement {
 
   private async handleQRScan(qrData: string) {
     try {
-      const item = findItemById(this.workspaceKey, qrData);
+      const item = await findItemById(this.workspaceKey, qrData);
 
       if (!item) {
         this.showToast("QR code not found", "error");
@@ -649,15 +649,15 @@ export class ListBrowser extends LitElement {
         return;
       }
 
-      const itemName = await lookupItemName(this.workspaceKey, item.id);
+      const itemName = await lookupItemName(this.workspaceKey, qrData);
       if (this.mode === "add-to-contents") {
         // Add the found item to container
-        await addItemToContents(this.workspaceKey, this.containerId, item.id);
+        await addItemToContents(this.workspaceKey, this.containerId, qrData);
 
         this.showToast(`✓ Added ${itemName}`, "success");
       } else if (this.mode === "remove-from-contents") {
         // Remove the found item from container
-        await removeItemFromContents(this.workspaceKey, this.containerId, item.id);
+        await removeItemFromContents(this.workspaceKey, this.containerId, qrData);
         this.showToast(`✓ Removed ${itemName}`, "success");
       }
 

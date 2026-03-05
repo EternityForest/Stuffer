@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "pdev":"vite dev --mode production",
     "build": "vite build",
     "preview": "vite preview",
     "deploy": "gh-pages -d dist"

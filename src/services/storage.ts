@@ -217,7 +217,7 @@ export async function findItemById(workspaceKey: string, ulid: string) {
 export async function lookupItemName(workspaceKey: string, itemId: string) {
   try {
     const item = await getItem(workspaceKey, itemId);
-    return item.name;
+    return item.title;
   } catch (e) {
     return "Unknown";
   }
@@ -1142,8 +1142,18 @@ export async function updateLastScanned(
   const doc = await getWorkspaceDoc(workspaceKey);
   const objectsMap = doc.getMap("objects") as Y.Map<any>;
   const item = objectsMap.get(itemId) as Y.Map<any>;
-  if (!item) throw new Error("Item not found");
+  if (!item) return;
 
+  const  prevLastScanned = item.get("lastScannedAt") as string | null;
+
+  if (prevLastScanned) {
+    // Ratelimit 1 scan per minute
+    const lastScanned = new Date(prevLastScanned);
+    const now = new Date();
+    if (now.getTime() - lastScanned.getTime() < 60 * 1000) {
+      return;
+    }
+  }
   item.set("lastScannedAt", new Date().toISOString());
   if (latitude !== undefined && longitude !== undefined) {
     item.set("lastScannedLatitude", latitude);

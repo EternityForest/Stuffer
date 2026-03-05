@@ -448,9 +448,9 @@ export class AddRemoveItem extends LitElement {
     }
   }
 
-  private handleAddMode(qrData: string) {
+  private async handleAddMode(qrData: string) {
     try {
-      const existingItem = findItemById(this.workspaceKey, qrData);
+      const existingItem = await findItemById(this.workspaceKey, qrData);
 
       if (existingItem) {
         // Item already exists, just show toast
