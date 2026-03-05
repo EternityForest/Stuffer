@@ -469,12 +469,12 @@ export class AddRemoveItem extends LitElement {
     }
   }
 
-  private handleRemoveMode(qrData: string) {
+  private async handleRemoveMode(qrData: string) {
     try {
-      const itemToRemove = findItemById(this.workspaceKey, qrData);
+      const itemToRemove = await findItemById(this.workspaceKey, qrData);
 
       if (itemToRemove) {
-        deleteItem(this.workspaceKey, itemToRemove.id);
+        await deleteItem(this.workspaceKey, itemToRemove.id);
         this.showToast(`✓ "${itemToRemove.name}" removed`, "success");
         // Keep scanning for rapid removal
         if (this.isScanning && this.videoElement) {

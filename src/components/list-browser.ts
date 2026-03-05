@@ -297,7 +297,7 @@ export class ListBrowser extends LitElement {
     try {
       if (this.mode === "remove-from-contents" && this.containerId) {
         // For remove mode, load items that are IN the container
-        this.items = getItemContents(this.workspaceKey, this.containerId).map(
+        this.items = await getItemContents(this.workspaceKey, this.containerId).map(
           (content) => ({
             id: content.id,
             name: content.name,
@@ -306,7 +306,7 @@ export class ListBrowser extends LitElement {
         );
       } else if (this.mode === "edit-loadout" && this.loadoutId) {
         // For edit loadout mode, load items that are IN the loadout
-        const loadout = getLoadout(this.workspaceKey, this.loadoutId);
+        const loadout = await getLoadout(this.workspaceKey, this.loadoutId);
         this.items = loadout.contents.map((content) => ({
           id: content.id,
           name: lookupItemName(this.workspaceKey, content.id),
@@ -641,7 +641,7 @@ export class ListBrowser extends LitElement {
     scanFrame();
   }
 
-  private handleQRScan(qrData: string) {
+  private async handleQRScan(qrData: string) {
     try {
       const item = findItemById(this.workspaceKey, qrData);
 
@@ -653,15 +653,15 @@ export class ListBrowser extends LitElement {
         return;
       }
 
-      const itemName = lookupItemName(this.workspaceKey, item.id);
+      const itemName = await lookupItemName(this.workspaceKey, item.id);
       if (this.mode === "add-to-contents") {
         // Add the found item to container
-        addItemToContents(this.workspaceKey, this.containerId, item.id);
+        await addItemToContents(this.workspaceKey, this.containerId, item.id);
 
         this.showToast(`✓ Added ${itemName}`, "success");
       } else if (this.mode === "remove-from-contents") {
         // Remove the found item from container
-        removeItemFromContents(this.workspaceKey, this.containerId, item.id);
+        await removeItemFromContents(this.workspaceKey, this.containerId, item.id);
         this.showToast(`✓ Removed ${itemName}`, "success");
       }
 

@@ -448,11 +448,11 @@ export class ObjectInspect extends LitElement {
     }
   }
 
-  private loadItem() {
+  private async loadItem() {
     if (!this.objectId || !this.workspaceKey) return;
 
     try {
-      const item = getItem(this.workspaceKey, this.objectId);
+      const item = await getItem(this.workspaceKey, this.objectId);
       this.title = item.title;
       this.description = item.description;
       this.imageData = (item as any).imageData || null;
@@ -477,7 +477,7 @@ export class ObjectInspect extends LitElement {
     }
   }
 
-  private checkLoadoutMismatch() {
+  private async checkLoadoutMismatch() {
     if (!this.selectedLoadout) {
       this.missingItems = [];
       this.extraItems = [];
@@ -485,7 +485,7 @@ export class ObjectInspect extends LitElement {
     }
 
     try {
-      const comparison = compareContentsToLoadout(
+      const comparison = await compareContentsToLoadout(
         this.workspaceKey,
         this.objectId
       );
@@ -561,9 +561,9 @@ export class ObjectInspect extends LitElement {
     }
   }
 
-  private loadAmountData() {
+  private async loadAmountData() {
     try {
-      this.amountUpdates = getAmountUpdates(this.workspaceKey, this.objectId);
+      this.amountUpdates = await getAmountUpdates(this.workspaceKey, this.objectId);
       calculateCurrentAmount(this.workspaceKey, this.objectId).then(
         (amount) => {
           this.currentAmount = amount;
