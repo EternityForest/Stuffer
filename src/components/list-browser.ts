@@ -297,7 +297,7 @@ export class ListBrowser extends LitElement {
     try {
       if (this.mode === "remove-from-contents" && this.containerId) {
         // For remove mode, load items that are IN the container
-        this.items = await getItemContents(this.workspaceKey, this.containerId).map(
+        this.items = (await getItemContents(this.workspaceKey, this.containerId)).map(
           (content) => ({
             id: content.id,
             name: content.name,
