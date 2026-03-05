@@ -6,6 +6,7 @@ import {
   setWorkspaceLocalSettingKey,
   getWorkspaceLocalSettings,
 } from "./local-settings.js";
+import convert from "convert";
 
 let yDoc: Y.Doc | null = null;
 let workspacesMap: Y.Map<any> | null = null;
@@ -115,6 +116,7 @@ export function addItem(workspaceKey: string, itemName: string, uuid?: string) {
   item.set("title", itemName);
   item.set("description", "");
   item.set("contents", new Y.Map());
+  item.set("amountUpdates", new Y.Array());
 
   objectsMap.set(itemId, item);
   return itemId;
@@ -955,4 +957,194 @@ export function updateWorkspaceProperty(
   }
 
   workspace.set(property, value);
+}
+
+// Amount tracking functions
+export function addAmountUpdate(
+  workspaceKey: string,
+  itemId: string,
+  type: 'set' | 'delta',
+  unit: string,
+  quantity: number
+) {
+  if (!workspacesMap) throw new Error("Workspaces map not initialized");
+
+  const workspace = workspacesMap.get(workspaceKey) as Y.Map<any>;
+  if (!workspace) throw new Error("Workspace not found");
+
+  const objectsMap = workspace.get("objects") as Y.Map<any>;
+  const item = objectsMap.get(itemId) as Y.Map<any>;
+  if (!item) throw new Error("Item not found");
+
+  let amountUpdates = item.get("amountUpdates") as Y.Array<any>;
+  if (!amountUpdates) {
+    amountUpdates = new Y.Array();
+    item.set("amountUpdates", amountUpdates);
+  }
+
+  const updateEntry = new Y.Map();
+  updateEntry.set("id", generateItemId());
+  updateEntry.set("type", type);
+  updateEntry.set("unit", unit);
+  updateEntry.set("quantity", quantity);
+  updateEntry.set("timestamp", new Date().toISOString());
+
+  amountUpdates.push([updateEntry]);
+}
+
+export function getAmountUpdates(workspaceKey: string, itemId: string) {
+  if (!workspacesMap) throw new Error("Workspaces map not initialized");
+
+  const workspace = workspacesMap.get(workspaceKey) as Y.Map<any>;
+  if (!workspace) throw new Error("Workspace not found");
+
+  const objectsMap = workspace.get("objects") as Y.Map<any>;
+  const item = objectsMap.get(itemId) as Y.Map<any>;
+  if (!item) throw new Error("Item not found");
+
+  const amountUpdates = item.get("amountUpdates") as Y.Array<any>;
+  if (!amountUpdates) return [];
+
+  const updates: Array<{
+    id: string;
+    type: 'set' | 'delta';
+    unit: string;
+    quantity: number;
+    timestamp: string;
+  }> = [];
+
+  amountUpdates.forEach((entry) => {
+    const entryMap = entry as Y.Map<any>;
+    updates.push({
+      id: entryMap.get("id") as string,
+      type: entryMap.get("type") as 'set' | 'delta',
+      unit: entryMap.get("unit") as string,
+      quantity: entryMap.get("quantity") as number,
+      timestamp: entryMap.get("timestamp") as string,
+    });
+  });
+
+  return updates;
+}
+
+export function deleteAmountUpdate(
+  workspaceKey: string,
+  itemId: string,
+  updateId: string
+) {
+  if (!workspacesMap) throw new Error("Workspaces map not initialized");
+
+  const workspace = workspacesMap.get(workspaceKey) as Y.Map<any>;
+  if (!workspace) throw new Error("Workspace not found");
+
+  const objectsMap = workspace.get("objects") as Y.Map<any>;
+  const item = objectsMap.get(itemId) as Y.Map<any>;
+  if (!item) throw new Error("Item not found");
+
+  const amountUpdates = item.get("amountUpdates") as Y.Array<any>;
+  if (!amountUpdates) return;
+
+  for (let i = 0; i < amountUpdates.length; i++) {
+    const entry = amountUpdates.get(i) as Y.Map<any>;
+    if (entry.get("id") === updateId) {
+      amountUpdates.delete(i, 1);
+      break;
+    }
+  }
+}
+
+export function updateAmountUpdate(
+  workspaceKey: string,
+  itemId: string,
+  updateId: string,
+  changes: Partial<{ quantity: number; unit: string }>
+) {
+  if (!workspacesMap) throw new Error("Workspaces map not initialized");
+
+  const workspace = workspacesMap.get(workspaceKey) as Y.Map<any>;
+  if (!workspace) throw new Error("Workspace not found");
+
+  const objectsMap = workspace.get("objects") as Y.Map<any>;
+  const item = objectsMap.get(itemId) as Y.Map<any>;
+  if (!item) throw new Error("Item not found");
+
+  const amountUpdates = item.get("amountUpdates") as Y.Array<any>;
+  if (!amountUpdates) return;
+
+  for (let i = 0; i < amountUpdates.length; i++) {
+    const entry = amountUpdates.get(i) as Y.Map<any>;
+    if (entry.get("id") === updateId) {
+      if (changes.quantity !== undefined) {
+        entry.set("quantity", changes.quantity);
+      }
+      if (changes.unit !== undefined) {
+        entry.set("unit", changes.unit);
+      }
+      break;
+    }
+  }
+}
+
+export async function calculateCurrentAmount(workspaceKey: string, itemId: string) {
+  try {
+    const updates = getAmountUpdates(workspaceKey, itemId);
+    if (updates.length === 0) {
+      return { amount: 0, unit: "", error: null };
+    }
+
+    // Sort by timestamp
+    const sorted = [...updates].sort(
+      (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+    );
+
+    // Find most recent 'set' entry
+    let baseAmount = 0;
+    let baseUnit = "";
+    let baseIndex = -1;
+
+    for (let i = sorted.length - 1; i >= 0; i--) {
+      if (sorted[i].type === "set") {
+        baseAmount = sorted[i].quantity;
+        baseUnit = sorted[i].unit;
+        baseIndex = i;
+        break;
+      }
+    }
+
+    if (baseIndex === -1 && updates.some((u) => u.type === "delta")) {
+      // No 'set', but have deltas - start from 0 with first delta's unit
+      baseUnit = sorted.find((u) => u.type === "delta")?.unit || "";
+    }
+
+
+
+    // Apply deltas after the base
+    let currentAmount = baseAmount;
+    for (let i = baseIndex + 1; i < sorted.length; i++) {
+      const update = sorted[i];
+
+      if (update.type === "delta") {
+        if (update.unit !== baseUnit && baseUnit) {
+          // Try to convert
+          try {
+            const converted = convert(update.quantity,update.unit).to(baseUnit);
+            currentAmount += converted;
+          } catch (e) {
+            return {
+              amount: 0,
+              unit: baseUnit,
+              error: `Cannot convert ${update.unit} to ${baseUnit}`,
+            };
+          }
+        } else {
+          currentAmount += update.quantity;
+        }
+      }
+    }
+
+    return { amount: currentAmount, unit: baseUnit, error: null };
+  } catch (error) {
+    console.error("Failed to calculate amount:", error);
+    return { amount: 0, unit: "", error: "Failed to calculate amount" };
+  }
 }
