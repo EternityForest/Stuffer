@@ -1,6 +1,6 @@
 import { LitElement, html, css } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
-import { getWorkspace, getWebRTCStatus, updateWorkspaceSyncPeerId, enableWebRTC, disconnectWebRTC, updateWorkspaceLocalPeerId } from '../services/storage.js';
+import { getWorkspace, getWebRTCStatus, updateWorkspaceSyncPeerId, enableWebRTC, disconnectWebRTC, updateWorkspaceLocalPeerId, exportWorkspaceState, importWorkspaceState, downloadWorkspaceFile } from '../services/storage.js';
 import { getWorkspaceLocalSettings } from '../services/local-settings.js';
 import { generateUUID } from '../utils/uuid.js';
 
@@ -242,7 +242,11 @@ export class WorkspaceSettings extends LitElement {
   @state()
   declare error: string | null;
 
+  @state()
+  declare importSuccess: string | null;
+
   private statusInterval: number | null = null;
+  private fileInput: HTMLInputElement | null = null;
 
   constructor() {
     super();
@@ -257,6 +261,7 @@ export class WorkspaceSettings extends LitElement {
     this.status = 'disconnected';
     this.signalingServer = 'wss://y-webrtc-ckynwnzncc.now.sh';
     this.error = null;
+    this.importSuccess = null;
   }
 
   connectedCallback() {
@@ -401,6 +406,59 @@ export class WorkspaceSettings extends LitElement {
     }));
   }
 
+  private handleExport() {
+    if (!this.workspaceKey) {
+      this.error = 'Workspace key not available';
+      return;
+    }
+
+    try {
+      const state = exportWorkspaceState(this.workspaceKey);
+      downloadWorkspaceFile(this.workspaceKey, state);
+      this.importSuccess = 'Workspace exported successfully';
+      setTimeout(() => { this.importSuccess = null; }, 3000);
+    } catch (error) {
+      console.error('Failed to export workspace:', error);
+      this.error = `Export failed: ${error instanceof Error ? error.message : String(error)}`;
+    }
+  }
+
+  private handleImportFile(e: Event) {
+    const input = e.target as HTMLInputElement;
+    const file = input.files?.[0];
+
+    if (!file) return;
+
+    if (!this.workspaceKey) {
+      this.error = 'Workspace key not available';
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const arrayBuffer = event.target?.result as ArrayBuffer;
+        const uint8Array = new Uint8Array(arrayBuffer);
+        importWorkspaceState(this.workspaceKey, uint8Array);
+        this.importSuccess = 'Workspace imported and merged successfully';
+        setTimeout(() => { this.importSuccess = null; }, 3000);
+        // Reset file input
+        input.value = '';
+      } catch (error) {
+        console.error('Failed to import workspace:', error);
+        this.error = `Import failed: ${error instanceof Error ? error.message : String(error)}`;
+        input.value = '';
+      }
+    };
+
+    reader.onerror = () => {
+      this.error = 'Failed to read file';
+      input.value = '';
+    };
+
+    reader.readAsArrayBuffer(file);
+  }
+
   render() {
     const statusText = this.status === 'connected' ? 'Connected' :
                        this.status === 'connecting' ? 'Connecting' :
@@ -486,6 +544,33 @@ export class WorkspaceSettings extends LitElement {
             ` : html`
               <button @click=${() => this.reconnect()}>Reconnect</button>
             `}
+          </div>
+        </div>
+
+        <div class="section">
+          <h3>Backup & Restore</h3>
+          ${this.importSuccess ? html`
+            <div style="padding: 0.75rem; background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; border-radius: 4px; font-size: 0.9rem; margin-bottom: 1rem;">${this.importSuccess}</div>
+          ` : ''}
+
+          <div class="form-group">
+            <label>Export Workspace</label>
+            <button @click=${() => this.handleExport()} style="width: 100%;">Download .invupd File</button>
+            <div class="info">
+              Export entire workspace state to file
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label>Import Workspace</label>
+            <input
+              type="file"
+              accept=".invupd"
+              @change=${(e: Event) => this.handleImportFile(e)}
+            />
+            <div class="warning">
+              Importing will merge with existing data
+            </div>
           </div>
         </div>
       </div>

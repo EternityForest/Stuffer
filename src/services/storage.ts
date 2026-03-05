@@ -193,9 +193,6 @@ export function getItem(workspaceKey: string, itemId: string) {
     createdAt: item.get("createdAt") as string,
     imageData: item.get("imageData") as string | undefined,
     selectedLoadout: item.get("selectedLoadout") as string | null,
-    lastScannedAt: item.get("lastScannedAt") as string | undefined,
-    lastScannedLatitude: item.get("lastScannedLatitude") as number | undefined,
-    lastScannedLongitude: item.get("lastScannedLongitude") as number | undefined,
   };
 }
 
