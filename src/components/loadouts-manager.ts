@@ -1,6 +1,6 @@
 import { LitElement, html, css } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
-import { getLoadouts, deleteLoadout } from '../services/storage.js';
+import { getLoadouts, deleteLoadout, getWorkspaceDoc} from '../services/storage.js';
 
 @customElement('loadouts-manager')
 export class LoadoutsManager extends LitElement {
@@ -148,10 +148,9 @@ export class LoadoutsManager extends LitElement {
     this.cleanupYjsListener();
   }
 
-  private setupYjsListener() {
-    import('../services/storage.js').then(({ getYDoc }) => {
+  private async setupYjsListener() {
       try {
-        const yDoc = getYDoc(this.workspaceKey);
+        const yDoc = await getWorkspaceDoc(this.workspaceKey);
         this.updateListener = () => {
           this.loadLoadouts();
           this.requestUpdate();
@@ -160,20 +159,17 @@ export class LoadoutsManager extends LitElement {
       } catch (error) {
         console.error('Failed to subscribe to Yjs updates:', error);
       }
-    });
   }
 
-  private cleanupYjsListener() {
+  private async cleanupYjsListener() {
     if (this.updateListener) {
-      import('../services/storage.js').then(({ getYDoc }) => {
         try {
-          const yDoc = getYDoc(this.workspaceKey);
+          const yDoc = await getWorkspaceDoc(this.workspaceKey);
           yDoc.off('update', this.updateListener!);
           this.updateListener = null;
         } catch (error) {
           console.error('Failed to unsubscribe from Yjs updates:', error);
         }
-      });
     }
   }
 
@@ -183,11 +179,11 @@ export class LoadoutsManager extends LitElement {
     }
   }
 
-  private loadLoadouts() {
+  private async loadLoadouts() {
     if (!this.workspaceKey) return;
 
     try {
-      this.loadouts = getLoadouts(this.workspaceKey);
+      this.loadouts = await getLoadouts(this.workspaceKey);
     } catch (error) {
       console.error('Failed to load loadouts:', error);
       this.loadouts = [];

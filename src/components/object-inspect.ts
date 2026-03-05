@@ -13,6 +13,7 @@ import {
   updateAmountUpdate,
   deleteAmountUpdate,
   calculateCurrentAmount,
+  getWorkspaceDoc,
 } from "../services/storage.js";
 import { compressImage } from "../services/imageCompression.js";
 
@@ -330,7 +331,7 @@ export class ObjectInspect extends LitElement {
   declare description: string;
 
   @state()
-  declare contents: Array<{ id: string; name: string; quantity: number }>;
+  declare contents: Array<{ id: string; name: string;}>;
 
   @state()
   declare imageData: string | null;
@@ -413,10 +414,9 @@ export class ObjectInspect extends LitElement {
       this.goBack();
     }
   }
-  private setupYjsListener() {
-    import("../services/storage.js").then(({ getYDoc }) => {
+  private async setupYjsListener() {
       try {
-        const yDoc = getYDoc(this.workspaceKey);
+        const yDoc = await getWorkspaceDoc(this.workspaceKey);
         this.updateListener = () => {
           this.loadItem();
           this.requestUpdate();
@@ -425,20 +425,17 @@ export class ObjectInspect extends LitElement {
       } catch (error) {
         console.error("Failed to subscribe to Yjs updates:", error);
       }
-    });
   }
 
-  private cleanupYjsListener() {
+  private async cleanupYjsListener() {
     if (this.updateListener) {
-      import("../services/storage.js").then(({ getYDoc }) => {
         try {
-          const yDoc = getYDoc(this.workspaceKey);
+          const yDoc = await getWorkspaceDoc(this.workspaceKey);
           yDoc.off("update", this.updateListener!);
           this.updateListener = null;
         } catch (error) {
           console.error("Failed to unsubscribe from Yjs updates:", error);
         }
-      });
     }
   }
 
@@ -469,11 +466,11 @@ export class ObjectInspect extends LitElement {
     }
   }
 
-  private loadLoadouts() {
+  private async loadLoadouts() {
     if (!this.workspaceKey) return;
 
     try {
-      this.loadouts = getLoadouts(this.workspaceKey);
+      this.loadouts = await  getLoadouts(this.workspaceKey);
     } catch (error) {
       console.error("Failed to load loadouts:", error);
       this.loadouts = [];
@@ -499,11 +496,11 @@ export class ObjectInspect extends LitElement {
       this.missingItems = [];
       this.extraItems = [];
     }
-  }
+}
 
-  private loadContents() {
+  private async loadContents() {
     try {
-      this.contents = getItemContents(this.workspaceKey, this.objectId);
+      this.contents = await getItemContents(this.workspaceKey, this.objectId);
     } catch (error) {
       console.error("Failed to load contents:", error);
       this.contents = [];

@@ -1,8 +1,8 @@
-import { LitElement, html, css } from 'lit';
-import { customElement, property, state } from 'lit/decorators.js';
-import { getItems } from '../services/storage.js';
+import { LitElement, html, css } from "lit";
+import { customElement, property, state } from "lit/decorators.js";
+import { getItems, getWorkspaceDoc } from "../services/storage.js";
 
-@customElement('workspace-browser')
+@customElement("workspace-browser")
 export class WorkspaceBrowser extends LitElement {
   static createRenderRoot() {
     return this;
@@ -103,13 +103,14 @@ export class WorkspaceBrowser extends LitElement {
   @state()
   declare objects: Array<{ id: string; name: string; createdAt: string }>;
 
-  private updateListener: ((update: Uint8Array, origin: any) => void) | null = null;
+  private updateListener: ((update: Uint8Array, origin: any) => void) | null =
+    null;
 
   constructor() {
     super();
-    this.workspaceName = '';
-    this.workspaceKey = '';
-    this.searchQuery = '';
+    this.workspaceName = "";
+    this.workspaceKey = "";
+    this.searchQuery = "";
     this.objects = [];
   }
 
@@ -124,54 +125,50 @@ export class WorkspaceBrowser extends LitElement {
     this.cleanupYjsListener();
   }
 
-  private setupYjsListener() {
-    import('../services/storage.js').then(({ getYDoc }) => {
+  private async setupYjsListener() {
       try {
-        const yDoc = getYDoc(this.workspaceKey);
+        const yDoc = await getWorkspaceDoc(this.workspaceKey);
         this.updateListener = () => {
           this.loadItems();
           this.requestUpdate();
         };
-        yDoc.on('update', this.updateListener);
+        yDoc.on("update", this.updateListener);
       } catch (error) {
-        console.error('Failed to subscribe to Yjs updates:', error);
+        console.error("Failed to subscribe to Yjs updates:", error);
       }
-    });
   }
 
-  private cleanupYjsListener() {
+  private async cleanupYjsListener() {
     if (this.updateListener) {
-      import('../services/storage.js').then(({ getYDoc }) => {
-        try {
-          const yDoc = getYDoc(this.workspaceKey);
-          yDoc.off('update', this.updateListener!);
-          this.updateListener = null;
-        } catch (error) {
-          console.error('Failed to unsubscribe from Yjs updates:', error);
-        }
-      });
+      try {
+        const yDoc = await getWorkspaceDoc(this.workspaceKey);
+        yDoc.off("update", this.updateListener!);
+        this.updateListener = null;
+      } catch (error) {
+        console.error("Failed to unsubscribe from Yjs updates:", error);
+      }
     }
   }
 
-  private loadItems() {
+  private async loadItems() {
     if (!this.workspaceKey) return;
 
     try {
-      this.objects = getItems(this.workspaceKey);
+      this.objects = await getItems(this.workspaceKey);
     } catch (error) {
-      console.error('Failed to load items:', error);
+      console.error("Failed to load items:", error);
       this.objects = [];
     }
   }
 
   updated(changedProperties: Map<string, any>) {
-    if (changedProperties.has('workspaceKey')) {
+    if (changedProperties.has("workspaceKey")) {
       this.loadItems();
     }
   }
 
   render() {
-    const filteredObjects = this.objects.filter(obj =>
+    const filteredObjects = this.objects.filter((obj) =>
       obj.name.toLowerCase().includes(this.searchQuery.toLowerCase())
     );
 
@@ -182,84 +179,105 @@ export class WorkspaceBrowser extends LitElement {
           class="search-bar"
           placeholder="Search items..."
           .value=${this.searchQuery}
-          @input=${(e: Event) => { this.searchQuery = (e.target as HTMLInputElement).value; }}
+          @input=${(e: Event) => {
+            this.searchQuery = (e.target as HTMLInputElement).value;
+          }}
         />
         <button @click=${() => this.addItem()}>Add Item</button>
         <button @click=${() => this.navigateToLoadouts()}>Loadouts</button>
         <button @click=${() => this.navigateToSettings()}>Settings</button>
-        <button @click=${() => this.dispatchNavigate('workspace-selector')}>Back</button>
+        <button @click=${() => this.dispatchNavigate("workspace-selector")}>
+          Back
+        </button>
       </div>
       <div class="objects-grid">
-        ${filteredObjects.map(obj => html`
-          <div class="object-card" @click=${() => this.selectObject(obj.id)}>
-            <h3>${obj.name}</h3>
-            <div class="meta">
-              <div>${new Date(obj.createdAt).toLocaleDateString()}</div>
+        ${filteredObjects.map(
+          (obj) => html`
+            <div class="object-card" @click=${() => this.selectObject(obj.id)}>
+              <h3>${obj.name}</h3>
+              <div class="meta">
+                <div>${new Date(obj.createdAt).toLocaleDateString()}</div>
+              </div>
             </div>
-          </div>
-        `)}
-        ${filteredObjects.length === 0 ? html`
-          <div style="grid-column: 1/-1; text-align: center; padding: 2rem; color: #666;">
-            ${this.objects.length === 0
-              ? 'No items yet. Add one to get started.'
-              : 'No items match your search.'}
-          </div>
-        ` : ''}
+          `
+        )}
+        ${filteredObjects.length === 0
+          ? html`
+              <div
+                style="grid-column: 1/-1; text-align: center; padding: 2rem; color: #666;"
+              >
+                ${this.objects.length === 0
+                  ? "No items yet. Add one to get started."
+                  : "No items match your search."}
+              </div>
+            `
+          : ""}
       </div>
     `;
   }
 
   private addItem() {
-    this.dispatchEvent(new CustomEvent('navigate', {
-      detail: { screen: 'add-remove-item', context: { workspace: this.workspaceKey } },
-      bubbles: true,
-      composed: true,
-    }));
+    this.dispatchEvent(
+      new CustomEvent("navigate", {
+        detail: {
+          screen: "add-remove-item",
+          context: { workspace: this.workspaceKey },
+        },
+        bubbles: true,
+        composed: true,
+      })
+    );
   }
 
   private selectObject(objectId: string) {
-    this.dispatchEvent(new CustomEvent('select-object', {
-      detail: objectId,
-      bubbles: true,
-      composed: true,
-    }));
+    this.dispatchEvent(
+      new CustomEvent("select-object", {
+        detail: objectId,
+        bubbles: true,
+        composed: true,
+      })
+    );
   }
 
   private navigateToLoadouts() {
-    this.dispatchEvent(new CustomEvent('navigate', {
-      detail: {
-        screen: 'loadouts-manager',
-        context: { workspaceKey: this.workspaceKey }
-      },
-      bubbles: true,
-      composed: true,
-    }));
+    this.dispatchEvent(
+      new CustomEvent("navigate", {
+        detail: {
+          screen: "loadouts-manager",
+          context: { workspaceKey: this.workspaceKey },
+        },
+        bubbles: true,
+        composed: true,
+      })
+    );
   }
 
   private navigateToSettings() {
-    this.dispatchEvent(new CustomEvent('navigate', {
-      detail: {
-        screen: 'workspace-settings',
-        context: { workspaceKey: this.workspaceKey }
-      },
-      bubbles: true,
-      composed: true,
-    }));
+    this.dispatchEvent(
+      new CustomEvent("navigate", {
+        detail: {
+          screen: "workspace-settings",
+          context: { workspaceKey: this.workspaceKey },
+        },
+        bubbles: true,
+        composed: true,
+      })
+    );
   }
 
-
-
   private dispatchNavigate(screen: string) {
-    this.dispatchEvent(new CustomEvent('navigate', {
-      detail: { screen },
-      bubbles: true,
-      composed: true,
-    }));
+    this.dispatchEvent(
+      new CustomEvent("navigate", {
+        detail: { screen },
+        bubbles: true,
+        composed: true,
+      })
+    );
   }
 }
 
 declare global {
   interface HTMLElementTagNameMap {
-    'workspace-browser': WorkspaceBrowser;
+    "workspace-browser": WorkspaceBrowser;
   }
 }

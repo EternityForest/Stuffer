@@ -1,9 +1,21 @@
-import { LitElement, html, css } from 'lit';
-import { customElement, property, state } from 'lit/decorators.js';
-import { getItems, getItemContents, addItemToContents, removeItemFromContents, findItemById, createLoadout, getLoadout, addItemToLoadout, removeItemFromLoadout, lookupItemName } from '../services/storage.js';
-import jsQR from 'jsqr';
+import { LitElement, html, css } from "lit";
+import { customElement, property, state } from "lit/decorators.js";
+import {
+  getItems,
+  getItemContents,
+  addItemToContents,
+  removeItemFromContents,
+  findItemById,
+  createLoadout,
+  getLoadout,
+  addItemToLoadout,
+  removeItemFromLoadout,
+  lookupItemName,
+  getWorkspaceDoc,
+} from "../services/storage.js";
+import jsQR from "jsqr";
 
-@customElement('list-browser')
+@customElement("list-browser")
 export class ListBrowser extends LitElement {
   static createRenderRoot() {
     return this;
@@ -196,10 +208,14 @@ export class ListBrowser extends LitElement {
   declare loadoutId: string;
 
   @property()
-  declare mode: 'add-to-contents' | 'remove-from-contents' | 'create-loadout' | 'edit-loadout';
+  declare mode:
+    | "add-to-contents"
+    | "remove-from-contents"
+    | "create-loadout"
+    | "edit-loadout";
 
   @state()
-  declare items: Array<{ id: string; name: string; }>;
+  declare items: Array<{ id: string; name: string }>;
 
   @state()
   declare isScanning: boolean;
@@ -208,22 +224,23 @@ export class ListBrowser extends LitElement {
   declare toastMessage: string;
 
   @state()
-  declare toastType: 'success' | 'error';
+  declare toastType: "success" | "error";
 
   private videoElement: HTMLVideoElement | null = null;
   private scanningInterval: number | null = null;
-  private updateListener: ((update: Uint8Array, origin: any) => void) | null = null;
+  private updateListener: ((update: Uint8Array, origin: any) => void) | null =
+    null;
 
   constructor() {
     super();
-    this.workspaceKey = '';
-    this.containerId = '';
-    this.loadoutId = '';
-    this.mode = 'create-loadout';
+    this.workspaceKey = "";
+    this.containerId = "";
+    this.loadoutId = "";
+    this.mode = "create-loadout";
     this.items = [];
     this.isScanning = false;
-    this.toastMessage = '';
-    this.toastType = 'success';
+    this.toastMessage = "";
+    this.toastType = "success";
   }
 
   disconnectedCallback() {
@@ -238,126 +255,183 @@ export class ListBrowser extends LitElement {
     this.setupYjsListener();
   }
 
-  private setupYjsListener() {
-    import('../services/storage.js').then(({ getYDoc }) => {
-      try {
-        const yDoc = getYDoc(this.workspaceKey);
-        this.updateListener = () => {
-          this.loadItems();
-          this.requestUpdate();
-        };
-        yDoc.on('update', this.updateListener);
-      } catch (error) {
-        console.error('Failed to subscribe to Yjs updates:', error);
-      }
-    });
+  private async setupYjsListener() {
+    try {
+      const yDoc = await getWorkspaceDoc(this.workspaceKey);
+      this.updateListener = () => {
+        this.loadItems();
+        this.requestUpdate();
+      };
+      yDoc.on("update", this.updateListener);
+    } catch (error) {
+      console.error("Failed to subscribe to Yjs updates:", error);
+    }
   }
 
-  private cleanupYjsListener() {
+  private async cleanupYjsListener() {
     if (this.updateListener) {
-      import('../services/storage.js').then(({ getYDoc }) => {
         try {
-          const yDoc = getYDoc(this.workspaceKey);
-          yDoc.off('update', this.updateListener!);
+          const yDoc = await getWorkspaceDoc(this.workspaceKey);
+          yDoc.off("update", this.updateListener!);
           this.updateListener = null;
         } catch (error) {
-          console.error('Failed to unsubscribe from Yjs updates:', error);
+          console.error("Failed to unsubscribe from Yjs updates:", error);
         }
-      });
     }
   }
 
   updated(changedProperties: Map<string, any>) {
-    if (changedProperties.has('workspaceKey') || changedProperties.has('mode') || changedProperties.has('containerId') || changedProperties.has('loadoutId')) {
+    if (
+      changedProperties.has("workspaceKey") ||
+      changedProperties.has("mode") ||
+      changedProperties.has("containerId") ||
+      changedProperties.has("loadoutId")
+    ) {
       this.loadItems();
     }
   }
 
-  private loadItems() {
+  private async loadItems() {
     if (!this.workspaceKey) return;
 
     try {
-      if (this.mode === 'remove-from-contents' && this.containerId) {
+      if (this.mode === "remove-from-contents" && this.containerId) {
         // For remove mode, load items that are IN the container
-        this.items = getItemContents(this.workspaceKey, this.containerId).map(content => ({
-          id: content.id,
-          name: content.name,
-          createdAt: new Date().toISOString(),
-        }));
-      } else if (this.mode === 'edit-loadout' && this.loadoutId) {
+        this.items = getItemContents(this.workspaceKey, this.containerId).map(
+          (content) => ({
+            id: content.id,
+            name: content.name,
+            createdAt: new Date().toISOString(),
+          })
+        );
+      } else if (this.mode === "edit-loadout" && this.loadoutId) {
         // For edit loadout mode, load items that are IN the loadout
         const loadout = getLoadout(this.workspaceKey, this.loadoutId);
-        this.items = loadout.contents.map(content => ({
+        this.items = loadout.contents.map((content) => ({
           id: content.id,
           name: lookupItemName(this.workspaceKey, content.id),
           createdAt: new Date().toISOString(),
         }));
       } else {
         // For add-to-contents and create-loadout modes, load all items in workspace
-        this.items = getItems(this.workspaceKey);
+        this.items = await getItems(this.workspaceKey);
       }
     } catch (error) {
-      console.error('Failed to load items:', error);
+      console.error("Failed to load items:", error);
       this.items = [];
     }
   }
 
   render() {
-    const title = this.mode === 'add-to-contents' ? 'Add Items to Container' :
-                  this.mode === 'remove-from-contents' ? 'Remove Items from Container' :
-                  this.mode === 'create-loadout' ? 'Create Loadout' :
-                  'Edit Loadout';
+    const title =
+      this.mode === "add-to-contents"
+        ? "Add Items to Container"
+        : this.mode === "remove-from-contents"
+        ? "Remove Items from Container"
+        : this.mode === "create-loadout"
+        ? "Create Loadout"
+        : "Edit Loadout";
 
     return html`
-      ${this.toastMessage ? html`
-        <div class="toast ${this.toastType}">
-          ${this.toastMessage}
-        </div>
-      ` : ''}
+      ${this.toastMessage
+        ? html`
+            <div class="toast ${this.toastType}">${this.toastMessage}</div>
+          `
+        : ""}
 
       <div class="header">
         <h2>${title}</h2>
-        ${(this.mode === 'add-to-contents' || this.mode === 'remove-from-contents' || this.mode === 'create-loadout' || this.mode === 'edit-loadout') ? html`
-          <button @click=${() => this.toggleScanning()}>${this.isScanning ? 'Stop Scan' : 'Scan QR'}</button>
-        ` : ''}
+        ${this.mode === "add-to-contents" ||
+        this.mode === "remove-from-contents" ||
+        this.mode === "create-loadout" ||
+        this.mode === "edit-loadout"
+          ? html`
+              <button @click=${() => this.toggleScanning()}>
+                ${this.isScanning ? "Stop Scan" : "Scan QR"}
+              </button>
+            `
+          : ""}
         <button @click=${() => this.goBack()}>Back</button>
       </div>
       <div class="list-container">
-        ${this.isScanning ? html`
-          <div class="scan-container">
-            <video id="qr-video"></video>
-            <div class="scanning-indicator">Scanning...</div>
-          </div>
-        ` : ''}
-
-        ${this.mode === 'add-to-contents' || this.mode === 'remove-from-contents' || this.mode === 'create-loadout' || this.mode === 'edit-loadout' ? html`
-          ${this.items.length > 0 ? html`
-            ${this.items.map(item => html`
-              <div class="list-item">
-                <div class="item-info">
-                  <div class="item-name">${item.name}</div>
-                </div>
-                <div class="item-actions">
-                  ${(this.mode === 'add-to-contents' || this.mode === 'create-loadout') ? html`
-                    ${this.mode === 'add-to-contents' ? html`
-                      <button class="action-btn add-btn" @click=${() => this.addItemToContainer(item.id, item.name)}>Add</button>
-                    ` : html`
-                      <button class="action-btn add-btn" @click=${() => this.addItemToLoadout(item.id, item.name)}>Add</button>
-                    `}
-                  ` : html`
-                    <button class="action-btn delete-btn" @click=${() => this.mode === 'remove-from-contents' ? this.removeItemFromContainer(item.id) : this.removeItemFromLoadout(item.id)}>Remove</button>
-                  `}
-                </div>
+        ${this.isScanning
+          ? html`
+              <div class="scan-container">
+                <video id="qr-video"></video>
+                <div class="scanning-indicator">Scanning...</div>
               </div>
-            `)}
-          ` : html`
-            <div class="empty-message">
-              ${this.mode === 'remove-from-contents' ? 'No items in container' :
-                this.mode === 'edit-loadout' ? 'No items in loadout' :
-                'No items yet'}
-            </div>
-          `}
-        ` : ''}
+            `
+          : ""}
+        ${this.mode === "add-to-contents" ||
+        this.mode === "remove-from-contents" ||
+        this.mode === "create-loadout" ||
+        this.mode === "edit-loadout"
+          ? html`
+              ${this.items.length > 0
+                ? html`
+                    ${this.items.map(
+                      (item) => html`
+                        <div class="list-item">
+                          <div class="item-info">
+                            <div class="item-name">${item.name}</div>
+                          </div>
+                          <div class="item-actions">
+                            ${this.mode === "add-to-contents" ||
+                            this.mode === "create-loadout"
+                              ? html`
+                                  ${this.mode === "add-to-contents"
+                                    ? html`
+                                        <button
+                                          class="action-btn add-btn"
+                                          @click=${() =>
+                                            this.addItemToContainer(
+                                              item.id,
+                                              item.name
+                                            )}
+                                        >
+                                          Add
+                                        </button>
+                                      `
+                                    : html`
+                                        <button
+                                          class="action-btn add-btn"
+                                          @click=${() =>
+                                            this.addItemToLoadout(
+                                              item.id,
+                                              item.name
+                                            )}
+                                        >
+                                          Add
+                                        </button>
+                                      `}
+                                `
+                              : html`
+                                  <button
+                                    class="action-btn delete-btn"
+                                    @click=${() =>
+                                      this.mode === "remove-from-contents"
+                                        ? this.removeItemFromContainer(item.id)
+                                        : this.removeItemFromLoadout(item.id)}
+                                  >
+                                    Remove
+                                  </button>
+                                `}
+                          </div>
+                        </div>
+                      `
+                    )}
+                  `
+                : html`
+                    <div class="empty-message">
+                      ${this.mode === "remove-from-contents"
+                        ? "No items in container"
+                        : this.mode === "edit-loadout"
+                        ? "No items in loadout"
+                        : "No items yet"}
+                    </div>
+                  `}
+            `
+          : ""}
       </div>
     `;
   }
@@ -367,11 +441,11 @@ export class ListBrowser extends LitElement {
 
     try {
       addItemToContents(this.workspaceKey, this.containerId, itemId);
-      this.showToast(`✓ Added ${itemName}`, 'success');
+      this.showToast(`✓ Added ${itemName}`, "success");
       // No need to reload since the item list doesn't change in add mode
     } catch (error) {
-      console.error('Failed to add item to container:', error);
-      this.showToast('Failed to add item', 'error');
+      console.error("Failed to add item to container:", error);
+      this.showToast("Failed to add item", "error");
     }
   }
 
@@ -381,9 +455,9 @@ export class ListBrowser extends LitElement {
     try {
       removeItemFromContents(this.workspaceKey, this.containerId, itemId);
       this.loadItems();
-      this.showToast('✓ Removed', 'success');
+      this.showToast("✓ Removed", "success");
     } catch (error) {
-      console.error('Failed to remove item from container:', error);
+      console.error("Failed to remove item from container:", error);
     }
   }
 
@@ -392,10 +466,10 @@ export class ListBrowser extends LitElement {
 
     try {
       addItemToLoadout(this.workspaceKey, this.loadoutId, itemId);
-      this.showToast(`✓ Added ${itemName}`, 'success');
+      this.showToast(`✓ Added ${itemName}`, "success");
     } catch (error) {
-      console.error('Failed to add item to loadout:', error);
-      this.showToast('Failed to add item', 'error');
+      console.error("Failed to add item to loadout:", error);
+      this.showToast("Failed to add item", "error");
     }
   }
 
@@ -405,84 +479,92 @@ export class ListBrowser extends LitElement {
     try {
       removeItemFromLoadout(this.workspaceKey, this.loadoutId, itemId);
       this.loadItems();
-      this.showToast('✓ Removed', 'success');
+      this.showToast("✓ Removed", "success");
     } catch (error) {
-      console.error('Failed to remove item from loadout:', error);
-      this.showToast('Failed to remove item', 'error');
+      console.error("Failed to remove item from loadout:", error);
+      this.showToast("Failed to remove item", "error");
     }
   }
 
   private goBack() {
     this.stopScanning();
 
-    if (this.mode === 'create-loadout') {
+    if (this.mode === "create-loadout") {
       // After creating, prompt for loadout name and go to loadouts manager
       this.promptLoadoutName();
-    } else if (this.mode === 'edit-loadout') {
+    } else if (this.mode === "edit-loadout") {
       // After editing, go back to loadouts manager
-      this.dispatchEvent(new CustomEvent('navigate', {
-        detail: {
-          screen: 'loadouts-manager',
-          context: { workspaceKey: this.workspaceKey }
-        },
-        bubbles: true,
-        composed: true,
-      }));
+      this.dispatchEvent(
+        new CustomEvent("navigate", {
+          detail: {
+            screen: "loadouts-manager",
+            context: { workspaceKey: this.workspaceKey },
+          },
+          bubbles: true,
+          composed: true,
+        })
+      );
     } else {
       // For add/remove from contents, go back to object-inspect
-      this.dispatchEvent(new CustomEvent('navigate', {
-        detail: {
-          screen: 'object-inspect',
-          context: { object: this.containerId }
-        },
-        bubbles: true,
-        composed: true,
-      }));
+      this.dispatchEvent(
+        new CustomEvent("navigate", {
+          detail: {
+            screen: "object-inspect",
+            context: { object: this.containerId },
+          },
+          bubbles: true,
+          composed: true,
+        })
+      );
     }
   }
 
   private promptLoadoutName() {
-    const title = prompt('Enter loadout name:');
+    const title = prompt("Enter loadout name:");
     if (!title) {
       // If cancelled, go back to loadouts manager without saving
-      this.dispatchEvent(new CustomEvent('navigate', {
-        detail: {
-          screen: 'loadouts-manager',
-          context: { workspaceKey: this.workspaceKey }
-        },
-        bubbles: true,
-        composed: true,
-      }));
+      this.dispatchEvent(
+        new CustomEvent("navigate", {
+          detail: {
+            screen: "loadouts-manager",
+            context: { workspaceKey: this.workspaceKey },
+          },
+          bubbles: true,
+          composed: true,
+        })
+      );
       return;
     }
 
     try {
-      const description = prompt('Enter loadout description (optional):') || '';
+      const description = prompt("Enter loadout description (optional):") || "";
 
       // Get the selected items from the current state
-      const contents =[];
+      const contents = [];
 
-      for(const item of this.items) {
-          contents.push({ itemId: item.id});
+      for (const item of this.items) {
+        contents.push({ itemId: item.id });
       }
 
       createLoadout(this.workspaceKey, title, description, contents);
-      this.showToast(`✓ Created loadout "${title}"`, 'success');
+      this.showToast(`✓ Created loadout "${title}"`, "success");
 
       // Navigate to loadouts manager
       setTimeout(() => {
-        this.dispatchEvent(new CustomEvent('navigate', {
-          detail: {
-            screen: 'loadouts-manager',
-            context: { workspaceKey: this.workspaceKey }
-          },
-          bubbles: true,
-          composed: true,
-        }));
+        this.dispatchEvent(
+          new CustomEvent("navigate", {
+            detail: {
+              screen: "loadouts-manager",
+              context: { workspaceKey: this.workspaceKey },
+            },
+            bubbles: true,
+            composed: true,
+          })
+        );
       }, 500);
     } catch (error) {
-      console.error('Failed to create loadout:', error);
-      this.showToast('Failed to create loadout', 'error');
+      console.error("Failed to create loadout:", error);
+      this.showToast("Failed to create loadout", "error");
     }
   }
 
@@ -497,14 +579,16 @@ export class ListBrowser extends LitElement {
   private async startScanning() {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'environment' },
+        video: { facingMode: "environment" },
       });
 
       this.isScanning = true;
       this.requestUpdate();
 
       setTimeout(() => {
-        this.videoElement = this.shadowRoot?.querySelector('#qr-video') as HTMLVideoElement;
+        this.videoElement = this.shadowRoot?.querySelector(
+          "#qr-video"
+        ) as HTMLVideoElement;
         if (this.videoElement) {
           this.videoElement.srcObject = stream;
           this.videoElement.play();
@@ -512,7 +596,7 @@ export class ListBrowser extends LitElement {
         }
       }, 0);
     } catch (error) {
-      this.showToast(`Camera access denied: ${error}`, 'error');
+      this.showToast(`Camera access denied: ${error}`, "error");
       this.isScanning = false;
     }
   }
@@ -521,7 +605,7 @@ export class ListBrowser extends LitElement {
     this.isScanning = false;
     if (this.videoElement?.srcObject) {
       const tracks = (this.videoElement.srcObject as MediaStream).getTracks();
-      tracks.forEach(track => track.stop());
+      tracks.forEach((track) => track.stop());
       this.videoElement.srcObject = null;
     }
     if (this.scanningInterval !== null) {
@@ -531,8 +615,8 @@ export class ListBrowser extends LitElement {
   }
 
   private startQRScanning() {
-    const canvas = document.createElement('canvas');
-    const ctx = canvas.getContext('2d');
+    const canvas = document.createElement("canvas");
+    const ctx = canvas.getContext("2d");
 
     const scanFrame = () => {
       if (!this.isScanning || !this.videoElement || !ctx) return;
@@ -562,7 +646,7 @@ export class ListBrowser extends LitElement {
       const item = findItemById(this.workspaceKey, qrData);
 
       if (!item) {
-        this.showToast('QR code not found', 'error');
+        this.showToast("QR code not found", "error");
         if (this.isScanning && this.videoElement) {
           this.startQRScanning();
         }
@@ -570,15 +654,15 @@ export class ListBrowser extends LitElement {
       }
 
       const itemName = lookupItemName(this.workspaceKey, item.id);
-      if (this.mode === 'add-to-contents') {
+      if (this.mode === "add-to-contents") {
         // Add the found item to container
         addItemToContents(this.workspaceKey, this.containerId, item.id);
 
-        this.showToast(`✓ Added ${itemName}`, 'success');
-      } else if (this.mode === 'remove-from-contents') {
+        this.showToast(`✓ Added ${itemName}`, "success");
+      } else if (this.mode === "remove-from-contents") {
         // Remove the found item from container
         removeItemFromContents(this.workspaceKey, this.containerId, item.id);
-        this.showToast(`✓ Removed ${itemName}`, 'success');
+        this.showToast(`✓ Removed ${itemName}`, "success");
       }
 
       // Reload items and keep scanning
@@ -587,21 +671,21 @@ export class ListBrowser extends LitElement {
         this.startQRScanning();
       }
     } catch (error) {
-      this.showToast(`Error: ${error}`, 'error');
+      this.showToast(`Error: ${error}`, "error");
     }
   }
 
-  private showToast(message: string, type: 'success' | 'error' = 'success') {
+  private showToast(message: string, type: "success" | "error" = "success") {
     this.toastMessage = message;
     this.toastType = type;
     setTimeout(() => {
-      this.toastMessage = '';
+      this.toastMessage = "";
     }, 2500);
   }
 }
 
 declare global {
   interface HTMLElementTagNameMap {
-    'list-browser': ListBrowser;
+    "list-browser": ListBrowser;
   }
 }

@@ -68,7 +68,7 @@ export async function initializeYDoc() {
 }
 
 // Get or create a workspace Y.Doc
-async function getWorkspaceDoc(workspaceKey: string): Promise<Y.Doc> {
+export async function getWorkspaceDoc(workspaceKey: string): Promise<Y.Doc> {
   if (workspaceDocs.has(workspaceKey)) {
     return workspaceDocs.get(workspaceKey)!;
   }
@@ -99,11 +99,6 @@ async function getWorkspaceDoc(workspaceKey: string): Promise<Y.Doc> {
   workspacePersistence.set(workspaceKey, persistence);
   return doc;
 }
-
-export function getYDoc(workspaceKey: string) {
-  return workspaceDocs.get(workspaceKey)!;
-}
-
 // Export for component listeners
 export async function getWorkspaceDocExported(workspaceKey: string): Promise<Y.Doc> {
   return getWorkspaceDoc(workspaceKey);
@@ -178,7 +173,7 @@ export async function deleteWorkspace(key: string) {
 
 export async function addItem(workspaceKey: string, itemName: string, uuid?: string) {
   const doc = await getWorkspaceDoc(workspaceKey);
-  const objectsMap = doc.get("objects") as Y.Map<any>;
+  const objectsMap = doc.getMap("objects") as Y.Map<any>;
   const itemId = uuid || generateItemId();
 
   const item = new Y.Map();
@@ -195,7 +190,7 @@ export async function addItem(workspaceKey: string, itemName: string, uuid?: str
 
 export async function getItems(workspaceKey: string) {
   const doc = await getWorkspaceDoc(workspaceKey);
-  const objectsMap = doc.get("objects") as Y.Map<any>;
+  const objectsMap = doc.getMap("objects") as Y.Map<any>;
   const items: Array<{
     id: string;
     name: string;
@@ -215,7 +210,7 @@ export async function getItems(workspaceKey: string) {
 
 export async function findItemById(workspaceKey: string, ulid: string) {
   const doc = await getWorkspaceDoc(workspaceKey);
-  const objectsMap = doc.get("objects") as Y.Map<any>;
+  const objectsMap = doc.getMap("objects") as Y.Map<any>;
   return objectsMap.get(ulid) as Y.Map<any>;
 }
 
@@ -230,13 +225,13 @@ export async function lookupItemName(workspaceKey: string, itemId: string) {
 
 export async function deleteItem(workspaceKey: string, itemId: string) {
   const doc = await getWorkspaceDoc(workspaceKey);
-  const objectsMap = doc.get("objects") as Y.Map<any>;
+  const objectsMap = doc.getMap("objects") as Y.Map<any>;
   objectsMap.delete(itemId);
 }
 
 export async function getItem(workspaceKey: string, itemId: string) {
   const doc = await getWorkspaceDoc(workspaceKey);
-  const objectsMap = doc.get("objects") as Y.Map<any>;
+  const objectsMap = doc.getMap("objects") as Y.Map<any>;
   const item = objectsMap.get(itemId) as Y.Map<any>;
   if (!item) throw new Error("Item not found");
 
@@ -258,7 +253,7 @@ export async function updateItemProperty(
   value: any
 ) {
   const doc = await getWorkspaceDoc(workspaceKey);
-  const objectsMap = doc.get("objects") as Y.Map<any>;
+  const objectsMap = doc.getMap("objects") as Y.Map<any>;
   const item = objectsMap.get(itemId) as Y.Map<any>;
   if (!item) throw new Error("Item not found");
 
@@ -267,7 +262,7 @@ export async function updateItemProperty(
 
 export async function getItemContents(workspaceKey: string, itemId: string) {
   const doc = await getWorkspaceDoc(workspaceKey);
-  const objectsMap = doc.get("objects") as Y.Map<any>;
+  const objectsMap = doc.getMap("objects") as Y.Map<any>;
   const item = objectsMap.get(itemId) as Y.Map<any>;
   if (!item) throw new Error("Item not found");
 
@@ -308,7 +303,7 @@ export async function addItemToContents(
   itemId: string,
 ) {
   const doc = await getWorkspaceDoc(workspaceKey);
-  const objectsMap = doc.get("objects") as Y.Map<any>;
+  const objectsMap = doc.getMap("objects") as Y.Map<any>;
   const container = objectsMap.get(containerId) as Y.Map<any>;
   if (!container) throw new Error("Container not found");
 
@@ -333,7 +328,7 @@ export async function removeItemFromContents(
   contentItemId: string
 ) {
   const doc = await getWorkspaceDoc(workspaceKey);
-  const objectsMap = doc.get("objects") as Y.Map<any>;
+  const objectsMap = doc.getMap("objects") as Y.Map<any>;
   const container = objectsMap.get(containerId) as Y.Map<any>;
   if (!container) throw new Error("Container not found");
 
@@ -348,7 +343,7 @@ export async function createLoadout(
   contents: Array<{ itemId: string;}> = []
 ) {
   const doc = await getWorkspaceDoc(workspaceKey);
-  const loadoutsMap = doc.get("loadouts") as Y.Map<any>;
+  const loadoutsMap = doc.getMap("loadouts") as Y.Map<any>;
   const loadoutId = generateItemId();
 
   const loadout = new Y.Map();
@@ -385,13 +380,12 @@ export async function saveObjectAsLoadout(
   );
 }
 
-export function getLoadouts(workspaceKey: string) {
-  if (!workspacesMap) throw new Error("Workspaces map not initialized");
+export async function getLoadouts(workspaceKey: string) {
 
-  const workspace = workspacesMap.get(workspaceKey) as Y.Map<any>;
+  const workspace = await getWorkspaceDoc(workspaceKey);
   if (!workspace) throw new Error("Workspace not found");
 
-  const loadoutsMap = workspace.get("loadouts") as Y.Map<any>;
+  const loadoutsMap = workspace.getMap("loadouts") as Y.Map<any>;
   const loadouts: Array<{
     id: string;
     title: string;
@@ -416,7 +410,7 @@ export function getLoadouts(workspaceKey: string) {
 
 export async function getLoadout(workspaceKey: string, loadoutId: string) {
   const doc = await getWorkspaceDoc(workspaceKey);
-  const loadoutsMap = doc.get("loadouts") as Y.Map<any>;
+  const loadoutsMap = doc.getMap("loadouts") as Y.Map<any>;
   const loadout = loadoutsMap.get(loadoutId) as Y.Map<any>;
   if (!loadout) throw new Error("Loadout not found");
 
@@ -446,7 +440,7 @@ export async function updateLoadoutProperty(
   value: any
 ) {
   const doc = await getWorkspaceDoc(workspaceKey);
-  const loadoutsMap = doc.get("loadouts") as Y.Map<any>;
+  const loadoutsMap = doc.getMap("loadouts") as Y.Map<any>;
   const loadout = loadoutsMap.get(loadoutId) as Y.Map<any>;
   if (!loadout) throw new Error("Loadout not found");
 
@@ -459,7 +453,7 @@ export async function addItemToLoadout(
   itemId: string,
 ) {
   const doc = await getWorkspaceDoc(workspaceKey);
-  const loadoutsMap = doc.get("loadouts") as Y.Map<any>;
+  const loadoutsMap = doc.getMap("loadouts") as Y.Map<any>;
   const loadout = loadoutsMap.get(loadoutId) as Y.Map<any>;
   if (!loadout) throw new Error("Loadout not found");
 
@@ -484,7 +478,7 @@ export async function removeItemFromLoadout(
   itemId: string
 ) {
   const doc = await getWorkspaceDoc(workspaceKey);
-  const loadoutsMap = doc.get("loadouts") as Y.Map<any>;
+  const loadoutsMap = doc.getMap("loadouts") as Y.Map<any>;
   const loadout = loadoutsMap.get(loadoutId) as Y.Map<any>;
   if (!loadout) throw new Error("Loadout not found");
 
@@ -494,7 +488,7 @@ export async function removeItemFromLoadout(
 
 export async function deleteLoadout(workspaceKey: string, loadoutId: string) {
   const doc = await getWorkspaceDoc(workspaceKey);
-  const loadoutsMap = doc.get("loadouts") as Y.Map<any>;
+  const loadoutsMap = doc.getMap("loadouts") as Y.Map<any>;
   loadoutsMap.delete(loadoutId);
 }
 
@@ -506,7 +500,7 @@ export async function compareContentsToLoadout(
   extra: Array<{ id: string; name: string; quantity: number }>;
 }> {
   const doc = await getWorkspaceDoc(workspaceKey);
-  const objectsMap = doc.get("objects") as Y.Map<any>;
+  const objectsMap = doc.getMap("objects") as Y.Map<any>;
   const object = objectsMap.get(objectId) as Y.Map<any>;
   if (!object) throw new Error("Object not found");
 
@@ -975,7 +969,7 @@ export async function addAmountUpdate(
   quantity: number
 ) {
   const doc = await getWorkspaceDoc(workspaceKey);
-  const objectsMap = doc.get("objects") as Y.Map<any>;
+  const objectsMap = doc.getMap("objects") as Y.Map<any>;
   const item = objectsMap.get(itemId) as Y.Map<any>;
   if (!item) throw new Error("Item not found");
 
@@ -997,7 +991,7 @@ export async function addAmountUpdate(
 
 export async function getAmountUpdates(workspaceKey: string, itemId: string) {
   const doc = await getWorkspaceDoc(workspaceKey);
-  const objectsMap = doc.get("objects") as Y.Map<any>;
+  const objectsMap = doc.getMap("objects") as Y.Map<any>;
   const item = objectsMap.get(itemId) as Y.Map<any>;
   if (!item) throw new Error("Item not found");
 
@@ -1032,7 +1026,7 @@ export async function deleteAmountUpdate(
   updateId: string
 ) {
   const doc = await getWorkspaceDoc(workspaceKey);
-  const objectsMap = doc.get("objects") as Y.Map<any>;
+  const objectsMap = doc.getMap("objects") as Y.Map<any>;
   const item = objectsMap.get(itemId) as Y.Map<any>;
   if (!item) throw new Error("Item not found");
 
@@ -1055,7 +1049,7 @@ export async function updateAmountUpdate(
   changes: Partial<{ quantity: number; unit: string }>
 ) {
   const doc = await getWorkspaceDoc(workspaceKey);
-  const objectsMap = doc.get("objects") as Y.Map<any>;
+  const objectsMap = doc.getMap("objects") as Y.Map<any>;
   const item = objectsMap.get(itemId) as Y.Map<any>;
   if (!item) throw new Error("Item not found");
 
@@ -1145,7 +1139,7 @@ export async function updateLastScanned(
   longitude?: number
 ) {
   const doc = await getWorkspaceDoc(workspaceKey);
-  const objectsMap = doc.get("objects") as Y.Map<any>;
+  const objectsMap = doc.getMap("objects") as Y.Map<any>;
   const item = objectsMap.get(itemId) as Y.Map<any>;
   if (!item) throw new Error("Item not found");
 
