@@ -449,10 +449,6 @@ export class ObjectInspect extends LitElement {
                 return html`
                   <div class="content-item ${className}">
                     <span class="content-item-name">${content.name}</span>
-                    <span class="content-item-quantity">qty: ${content.quantity}
-                      ${isMissing ? html`<span class="warning-indicator missing">⚠ missing from loadout</span>` : ''}
-                      ${isExtra ? html`<span class="warning-indicator extra">ℹ extra</span>` : ''}
-                    </span>
                   </div>
                 `;
               })}

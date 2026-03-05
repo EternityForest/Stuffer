@@ -1,6 +1,6 @@
 import { LitElement, html, css } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
-import { getItems, getItemContents, addItemToContents, removeItemFromContents, findItemById, createLoadout, getLoadout, addItemToLoadout, removeItemFromLoadout } from '../services/storage.js';
+import { getItems, getItemContents, addItemToContents, removeItemFromContents, findItemById, createLoadout, getLoadout, addItemToLoadout, removeItemFromLoadout, lookupItemName } from '../services/storage.js';
 import jsQR from 'jsqr';
 
 @customElement('list-browser')
@@ -199,10 +199,7 @@ export class ListBrowser extends LitElement {
   declare mode: 'add-to-contents' | 'remove-from-contents' | 'create-loadout' | 'edit-loadout';
 
   @state()
-  declare items: Array<{ id: string; name: string; qrData?: string; createdAt: string }>;
-
-  @state()
-  declare selectedQuantities: Map<string, number>;
+  declare items: Array<{ id: string; name: string; }>;
 
   @state()
   declare isScanning: boolean;
@@ -224,7 +221,6 @@ export class ListBrowser extends LitElement {
     this.loadoutId = '';
     this.mode = 'create-loadout';
     this.items = [];
-    this.selectedQuantities = new Map();
     this.isScanning = false;
     this.toastMessage = '';
     this.toastType = 'success';
@@ -286,7 +282,6 @@ export class ListBrowser extends LitElement {
         this.items = getItemContents(this.workspaceKey, this.containerId).map(content => ({
           id: content.id,
           name: content.name,
-          qrData: undefined,
           createdAt: new Date().toISOString(),
         }));
       } else if (this.mode === 'edit-loadout' && this.loadoutId) {
@@ -294,8 +289,7 @@ export class ListBrowser extends LitElement {
         const loadout = getLoadout(this.workspaceKey, this.loadoutId);
         this.items = loadout.contents.map(content => ({
           id: content.id,
-          name: content.name,
-          qrData: undefined,
+          name: lookupItemName(this.workspaceKey, content.id),
           createdAt: new Date().toISOString(),
         }));
       } else {
@@ -342,15 +336,9 @@ export class ListBrowser extends LitElement {
               <div class="list-item">
                 <div class="item-info">
                   <div class="item-name">${item.name}</div>
-                  <div class="item-meta">
-                    ${item.qrData ? 'QR tagged' : 'Manual entry'}
-                  </div>
                 </div>
                 <div class="item-actions">
                   ${(this.mode === 'add-to-contents' || this.mode === 'create-loadout') ? html`
-                    <input type="number" class="quantity-input" min="1" value="1"
-                      @change=${(e: Event) => this.selectedQuantities.set(item.id, parseInt((e.target as HTMLInputElement).value))}
-                    />
                     ${this.mode === 'add-to-contents' ? html`
                       <button class="action-btn add-btn" @click=${() => this.addItemToContainer(item.id, item.name)}>Add</button>
                     ` : html`
@@ -378,9 +366,7 @@ export class ListBrowser extends LitElement {
     if (!this.workspaceKey || !this.containerId) return;
 
     try {
-      const quantity = this.selectedQuantities.get(itemId) || 1;
-      addItemToContents(this.workspaceKey, this.containerId, itemId, quantity);
-      this.selectedQuantities.delete(itemId);
+      addItemToContents(this.workspaceKey, this.containerId, itemId);
       this.showToast(`✓ Added ${itemName}`, 'success');
       // No need to reload since the item list doesn't change in add mode
     } catch (error) {
@@ -405,9 +391,7 @@ export class ListBrowser extends LitElement {
     if (!this.workspaceKey || !this.loadoutId) return;
 
     try {
-      const quantity = this.selectedQuantities.get(itemId) || 1;
-      addItemToLoadout(this.workspaceKey, this.loadoutId, itemId, quantity);
-      this.selectedQuantities.delete(itemId);
+      addItemToLoadout(this.workspaceKey, this.loadoutId, itemId);
       this.showToast(`✓ Added ${itemName}`, 'success');
     } catch (error) {
       console.error('Failed to add item to loadout:', error);
@@ -476,14 +460,11 @@ export class ListBrowser extends LitElement {
       const description = prompt('Enter loadout description (optional):') || '';
 
       // Get the selected items from the current state
-      const contents = Array.from(this.selectedQuantities.entries()).map(([itemId, quantity]) => {
-        const item = this.items.find(i => i.id === itemId);
-        return {
-          itemId,
-          itemName: item?.name || '',
-          quantity
-        };
-      });
+      const contents =[];
+
+      for(const item of this.items) {
+          contents.push({ itemId: item.id});
+      }
 
       createLoadout(this.workspaceKey, title, description, contents);
       this.showToast(`✓ Created loadout "${title}"`, 'success');
@@ -588,15 +569,16 @@ export class ListBrowser extends LitElement {
         return;
       }
 
+      const itemName = lookupItemName(this.workspaceKey, item.id);
       if (this.mode === 'add-to-contents') {
         // Add the found item to container
-        const quantity = this.selectedQuantities.get(item.id) || 1;
-        addItemToContents(this.workspaceKey, this.containerId, item.id,quantity);
-        this.showToast(`✓ Added ${item.name}`, 'success');
+        addItemToContents(this.workspaceKey, this.containerId, item.id);
+
+        this.showToast(`✓ Added ${itemName}`, 'success');
       } else if (this.mode === 'remove-from-contents') {
         // Remove the found item from container
         removeItemFromContents(this.workspaceKey, this.containerId, item.id);
-        this.showToast(`✓ Removed ${item.name}`, 'success');
+        this.showToast(`✓ Removed ${itemName}`, 'success');
       }
 
       // Reload items and keep scanning

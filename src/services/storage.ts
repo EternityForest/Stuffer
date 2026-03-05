@@ -155,7 +155,7 @@ export function findItemById(workspaceKey: string, ulid: string) {
   return objectsMap.get(ulid) as Y.Map<any>;
 }
 
-function lookupItemName(workspaceKey: string, item: string) {
+export function lookupItemName(workspaceKey: string, item: string) {
   try {
     return getItem(workspaceKey, item).name;
   } catch (e) {
@@ -230,23 +230,21 @@ export function getItemContents(workspaceKey: string, itemId: string) {
     item.set("contents", contentsMap);
   }
 
-  const contents: Array<{ id: string; name: string; quantity: number }> = [];
+  const contents: Array<{ id: string; name: string; }> = [];
 
-  contentsMap.forEach((content, id) => {
+  contentsMap.forEach((_content, id) => {
     try {
       const item = getItem(workspaceKey, id);
       if (item) {
         contents.push({
           id,
-          name: item.name as string,
-          quantity: content.get("quantity") as number,
+          name: lookupItemName(workspaceKey, id),
         });
       }
     } catch (e) {
       contents.push({
         id,
         name: "Unknown",
-        quantity: content.get("quantity") as number,
       });
       console.error(e);
     }
@@ -259,7 +257,6 @@ export function addItemToContents(
   workspaceKey: string,
   containerId: string,
   itemId: string,
-  quantity: number = 1
 ) {
   if (!workspacesMap) throw new Error("Workspaces map not initialized");
 
@@ -273,7 +270,6 @@ export function addItemToContents(
   const contentsMap = container.get("contents") as Y.Map<any>;
 
   const content = new Y.Map();
-  content.set("quantity", quantity);
 
   contentsMap.set(itemId, content);
 }
@@ -300,7 +296,7 @@ export function createLoadout(
   workspaceKey: string,
   title: string,
   description: string = "",
-  contents: Array<{ itemId: string; quantity: number }> = []
+  contents: Array<{ itemId: string;}> = []
 ) {
   if (!workspacesMap) throw new Error("Workspaces map not initialized");
 
@@ -316,9 +312,8 @@ export function createLoadout(
   loadout.set("createdAt", new Date().toISOString());
 
   const loadoutContents = new Y.Map();
-  contents.forEach(({ itemId, quantity }) => {
+  contents.forEach(({ itemId }) => {
     const content = new Y.Map();
-    content.set("quantity", quantity);
     loadoutContents.set(itemId, content);
   });
 
@@ -350,8 +345,6 @@ export function saveObjectAsLoadout(
     description,
     objectContents.map((c) => ({
       itemId: c.id,
-      itemName: c.name,
-      quantity: c.quantity,
     }))
   );
 }
@@ -396,13 +389,12 @@ export function getLoadout(workspaceKey: string, loadoutId: string) {
   if (!loadout) throw new Error("Loadout not found");
 
   const contentsMap = loadout.get("contents") as Y.Map<any>;
-  const contents: Array<{ id: string; name: string; quantity: number }> = [];
+  const contents: Array<{ id: string; name: string;}> = [];
 
   contentsMap.forEach((content, id) => {
     contents.push({
       id,
       name: (content as Y.Map<any>).get("name") as string,
-      quantity: (content as Y.Map<any>).get("quantity") as number,
     });
   });
 
@@ -437,7 +429,6 @@ export function addItemToLoadout(
   workspaceKey: string,
   loadoutId: string,
   itemId: string,
-  quantity: number = 1
 ) {
   if (!workspacesMap) throw new Error("Workspaces map not initialized");
 
@@ -451,7 +442,6 @@ export function addItemToLoadout(
   const contentsMap = loadout.get("contents") as Y.Map<any>;
 
   const content = new Y.Map();
-  content.set("quantity", quantity);
 
   contentsMap.set(itemId, content);
 }
@@ -516,37 +506,24 @@ export function compareContentsToLoadout(
     const missing: Array<{ id: string; name: string; quantity: number }> = [];
     const extra: Array<{ id: string; name: string; quantity: number }> = [];
 
-    for (const [id, content] of objectMap) {
+    for (const [id, _content] of objectMap) {
       if (!loadoutMap.has(id)) {
         extra.push({
           id,
           name: lookupItemName(workspaceKey, id),
-          quantity: content.quantity,
-        });
-      } else if (content.quantity !== loadoutMap.get(id)?.quantity) {
-        extra.push({
-          id,
-          name: lookupItemName(workspaceKey, id),
-          quantity: content.quantity - (loadoutMap.get(id)?.quantity || 1),
+          quantity: 1
         });
       }
     }
 
-    for (const [id, content] of loadoutMap) {
+    for (const [id, _content] of loadoutMap) {
       if (!objectMap.has(id)) {
         missing.push({
           id,
           name: lookupItemName(workspaceKey, id),
-          quantity: content.quantity,
-        });
-      } else if (content.quantity !== loadoutMap.get(id)?.quantity) {
-        missing.push({
-          id,
-          name: lookupItemName(workspaceKey, id),
-          quantity: content.quantity - (loadoutMap.get(id)?.quantity || 1),
-        });
-      }
-    }
+          quantity: 1
+      })
+    }}
 
     return { missing, extra };
   } catch (error) {

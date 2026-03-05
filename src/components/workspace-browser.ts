@@ -101,7 +101,7 @@ export class WorkspaceBrowser extends LitElement {
   declare searchQuery: string;
 
   @state()
-  declare objects: Array<{ id: string; name: string; qrData?: string; createdAt: string }>;
+  declare objects: Array<{ id: string; name: string; createdAt: string }>;
 
   private updateListener: ((update: Uint8Array, origin: any) => void) | null = null;
 
@@ -194,7 +194,6 @@ export class WorkspaceBrowser extends LitElement {
           <div class="object-card" @click=${() => this.selectObject(obj.id)}>
             <h3>${obj.name}</h3>
             <div class="meta">
-              ${obj.qrData ? html`<div>QR: ${obj.qrData.substring(0, 20)}...</div>` : html`<div>Manual Entry</div>`}
               <div>${new Date(obj.createdAt).toLocaleDateString()}</div>
             </div>
           </div>
