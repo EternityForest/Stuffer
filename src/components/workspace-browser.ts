@@ -103,6 +103,8 @@ export class WorkspaceBrowser extends LitElement {
   @state()
   declare objects: Array<{ id: string; name: string; qrData?: string; createdAt: string }>;
 
+  private updateListener: ((update: Uint8Array, origin: any) => void) | null = null;
+
   constructor() {
     super();
     this.workspaceName = '';
@@ -114,22 +116,41 @@ export class WorkspaceBrowser extends LitElement {
   connectedCallback() {
     super.connectedCallback();
     this.loadItems();
-    // Listen for Yjs updates
+    this.setupYjsListener();
+  }
+
+  disconnectedCallback() {
+    super.disconnectedCallback();
+    this.cleanupYjsListener();
+  }
+
+  private setupYjsListener() {
     import('../services/storage.js').then(({ getYDoc }) => {
       try {
         const yDoc = getYDoc();
-        yDoc.on('update', () => {
+        this.updateListener = () => {
           this.loadItems();
           this.requestUpdate();
-        });
+        };
+        yDoc.on('update', this.updateListener);
       } catch (error) {
         console.error('Failed to subscribe to Yjs updates:', error);
       }
     });
   }
 
-  disconnectedCallback() {
-    super.disconnectedCallback();
+  private cleanupYjsListener() {
+    if (this.updateListener) {
+      import('../services/storage.js').then(({ getYDoc }) => {
+        try {
+          const yDoc = getYDoc();
+          yDoc.off('update', this.updateListener!);
+          this.updateListener = null;
+        } catch (error) {
+          console.error('Failed to unsubscribe from Yjs updates:', error);
+        }
+      });
+    }
   }
 
   private loadItems() {

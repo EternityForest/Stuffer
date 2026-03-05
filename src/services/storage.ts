@@ -1,7 +1,7 @@
 import * as Y from "yjs";
 import { IndexeddbPersistence } from "y-indexeddb";
 import Peer, { type DataConnection } from "peerjs";
-import { generateUUID } from "./uuid.js";
+import { generateItemId } from "./uuid.js";
 import {
   setWorkspaceLocalSettingKey,
   getWorkspaceLocalSettings,
@@ -100,22 +100,17 @@ export function deleteWorkspace(key: string) {
   workspacesMap.delete(key);
 }
 
-export function addItem(
-  workspaceKey: string,
-  itemName: string,
-  qrData?: string
-) {
+export function addItem(workspaceKey: string, itemName: string, uuid?: string) {
   if (!workspacesMap) throw new Error("Workspaces map not initialized");
 
   const workspace = workspacesMap.get(workspaceKey) as Y.Map<any>;
   if (!workspace) throw new Error("Workspace not found");
 
   const objectsMap = workspace.get("objects") as Y.Map<any>;
-  const itemId = generateUUID();
+  const itemId = uuid || generateItemId();
 
   const item = new Y.Map();
   item.set("name", itemName);
-  item.set("qrData", qrData || null);
   item.set("createdAt", new Date().toISOString());
   item.set("title", itemName);
   item.set("description", "");
@@ -135,7 +130,6 @@ export function getItems(workspaceKey: string) {
   const items: Array<{
     id: string;
     name: string;
-    qrData?: string;
     createdAt: string;
   }> = [];
 
@@ -143,7 +137,6 @@ export function getItems(workspaceKey: string) {
     items.push({
       id,
       name: item.get("name") as string,
-      qrData: item.get("qrData") as string | undefined,
       createdAt: item.get("createdAt") as string,
     });
   });
@@ -151,7 +144,7 @@ export function getItems(workspaceKey: string) {
   return items;
 }
 
-export function findItemByQR(workspaceKey: string, qrData: string) {
+export function findItemById(workspaceKey: string, ulid: string) {
   if (!workspacesMap) throw new Error("Workspaces map not initialized");
 
   const workspace = workspacesMap.get(workspaceKey) as Y.Map<any>;
@@ -159,27 +152,15 @@ export function findItemByQR(workspaceKey: string, qrData: string) {
 
   const objectsMap = workspace.get("objects") as Y.Map<any>;
 
-  for (const [id, item] of objectsMap) {
-    if ((item as Y.Map<any>).get("qrData") === qrData) {
-      return {
-        id,
-        name: (item as Y.Map<any>).get("name") as string,
-      };
-    }
-  }
+  return objectsMap.get(ulid) as Y.Map<any>;
+}
 
-  // Check if QR data itself is a valid UUID format (matches an item ID)
-  const uuidRegex =
-    /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-  if (uuidRegex.test(qrData) && objectsMap.has(qrData)) {
-    const item = objectsMap.get(qrData) as Y.Map<any>;
-    return {
-      id: qrData,
-      name: item.get("name") as string,
-    };
+function lookupItemName(workspaceKey: string, item: string) {
+  try {
+    return getItem(workspaceKey, item).name;
+  } catch (e) {
+    return "Unknown";
   }
-
-  return null;
 }
 
 export function deleteItem(workspaceKey: string, itemId: string) {
@@ -207,7 +188,6 @@ export function getItem(workspaceKey: string, itemId: string) {
     name: item.get("name") as string,
     title: item.get("title") as string,
     description: item.get("description") as string,
-    qrData: item.get("qrData") as string | undefined,
     createdAt: item.get("createdAt") as string,
     imageData: item.get("imageData") as string | undefined,
     selectedLoadout: item.get("selectedLoadout") as string | null,
@@ -253,11 +233,23 @@ export function getItemContents(workspaceKey: string, itemId: string) {
   const contents: Array<{ id: string; name: string; quantity: number }> = [];
 
   contentsMap.forEach((content, id) => {
-    contents.push({
-      id,
-      name: content.get("name") as string,
-      quantity: content.get("quantity") as number,
-    });
+    try {
+      const item = getItem(workspaceKey, id);
+      if (item) {
+        contents.push({
+          id,
+          name: item.name as string,
+          quantity: content.get("quantity") as number,
+        });
+      }
+    } catch (e) {
+      contents.push({
+        id,
+        name: "Unknown",
+        quantity: content.get("quantity") as number,
+      });
+      console.error(e);
+    }
   });
 
   return contents;
@@ -267,7 +259,6 @@ export function addItemToContents(
   workspaceKey: string,
   containerId: string,
   itemId: string,
-  itemName: string,
   quantity: number = 1
 ) {
   if (!workspacesMap) throw new Error("Workspaces map not initialized");
@@ -282,7 +273,6 @@ export function addItemToContents(
   const contentsMap = container.get("contents") as Y.Map<any>;
 
   const content = new Y.Map();
-  content.set("name", itemName);
   content.set("quantity", quantity);
 
   contentsMap.set(itemId, content);
@@ -310,7 +300,7 @@ export function createLoadout(
   workspaceKey: string,
   title: string,
   description: string = "",
-  contents: Array<{ itemId: string; itemName: string; quantity: number }> = []
+  contents: Array<{ itemId: string; quantity: number }> = []
 ) {
   if (!workspacesMap) throw new Error("Workspaces map not initialized");
 
@@ -318,7 +308,7 @@ export function createLoadout(
   if (!workspace) throw new Error("Workspace not found");
 
   const loadoutsMap = workspace.get("loadouts") as Y.Map<any>;
-  const loadoutId = generateUUID();
+  const loadoutId = generateItemId();
 
   const loadout = new Y.Map();
   loadout.set("title", title);
@@ -326,9 +316,8 @@ export function createLoadout(
   loadout.set("createdAt", new Date().toISOString());
 
   const loadoutContents = new Y.Map();
-  contents.forEach(({ itemId, itemName, quantity }) => {
+  contents.forEach(({ itemId, quantity }) => {
     const content = new Y.Map();
-    content.set("name", itemName);
     content.set("quantity", quantity);
     loadoutContents.set(itemId, content);
   });
@@ -448,7 +437,6 @@ export function addItemToLoadout(
   workspaceKey: string,
   loadoutId: string,
   itemId: string,
-  itemName: string,
   quantity: number = 1
 ) {
   if (!workspacesMap) throw new Error("Workspaces map not initialized");
@@ -463,7 +451,6 @@ export function addItemToLoadout(
   const contentsMap = loadout.get("contents") as Y.Map<any>;
 
   const content = new Y.Map();
-  content.set("name", itemName);
   content.set("quantity", quantity);
 
   contentsMap.set(itemId, content);
@@ -526,8 +513,40 @@ export function compareContentsToLoadout(
     const loadoutMap = new Map(loadout.contents.map((c) => [c.id, c]));
     const objectMap = new Map(objectContents.map((c) => [c.id, c]));
 
-    const missing = loadout.contents.filter((item) => !objectMap.has(item.id));
-    const extra = objectContents.filter((item) => !loadoutMap.has(item.id));
+    const missing: Array<{ id: string; name: string; quantity: number }> = [];
+    const extra: Array<{ id: string; name: string; quantity: number }> = [];
+
+    for (const [id, content] of objectMap) {
+      if (!loadoutMap.has(id)) {
+        extra.push({
+          id,
+          name: lookupItemName(workspaceKey, id),
+          quantity: content.quantity,
+        });
+      } else if (content.quantity !== loadoutMap.get(id)?.quantity) {
+        extra.push({
+          id,
+          name: lookupItemName(workspaceKey, id),
+          quantity: content.quantity - (loadoutMap.get(id)?.quantity || 1),
+        });
+      }
+    }
+
+    for (const [id, content] of loadoutMap) {
+      if (!objectMap.has(id)) {
+        missing.push({
+          id,
+          name: lookupItemName(workspaceKey, id),
+          quantity: content.quantity,
+        });
+      } else if (content.quantity !== loadoutMap.get(id)?.quantity) {
+        missing.push({
+          id,
+          name: lookupItemName(workspaceKey, id),
+          quantity: content.quantity - (loadoutMap.get(id)?.quantity || 1),
+        });
+      }
+    }
 
     return { missing, extra };
   } catch (error) {
@@ -647,7 +666,9 @@ function setupConnection(workspaceKey: string, conn: DataConnection) {
   const updateHandler = (update: Uint8Array) => {
     try {
       if (conn.open) {
-        console.log(`[${workspaceKey}] Sending update to peer ${conn.peer}, size: ${update.length}`);
+        console.log(
+          `[${workspaceKey}] Sending update to peer ${conn.peer}, size: ${update.length}`
+        );
         conn.send({
           type: "sync",
           data: update,
@@ -660,14 +681,20 @@ function setupConnection(workspaceKey: string, conn: DataConnection) {
 
   // Handle incoming messages
   conn.on("data", (msg: any) => {
-    console.log(`[${workspaceKey}] Received message type: ${msg.type} from peer ${conn.peer}, data type: ${msg.data?.constructor?.name}`);
+    console.log(
+      `[${workspaceKey}] Received message type: ${msg.type} from peer ${conn.peer}, data type: ${msg.data?.constructor?.name}`
+    );
 
     if (msg.type === "syncReady") {
       try {
         if (yDoc) {
-          console.log(`[${workspaceKey}] Peer is ready, sending our full state`);
+          console.log(
+            `[${workspaceKey}] Peer is ready, sending our full state`
+          );
           const stateVector = Y.encodeStateVector(yDoc);
-          console.log(`[${workspaceKey}] Sending state vector to peer ${conn.peer}, size: ${stateVector.length}`);
+          console.log(
+            `[${workspaceKey}] Sending state vector to peer ${conn.peer}, size: ${stateVector.length}`
+          );
           conn.send({
             type: "stateVector",
             data: stateVector,
@@ -681,8 +708,13 @@ function setupConnection(workspaceKey: string, conn: DataConnection) {
     if (msg.type === "sync" && msg.data) {
       try {
         if (yDoc) {
-          const data = msg.data instanceof Uint8Array ? msg.data : new Uint8Array(msg.data);
-          console.log(`[${workspaceKey}] Applying sync update from peer, size: ${data.length}`);
+          const data =
+            msg.data instanceof Uint8Array
+              ? msg.data
+              : new Uint8Array(msg.data);
+          console.log(
+            `[${workspaceKey}] Applying sync update from peer, size: ${data.length}`
+          );
           Y.logUpdate(data);
           Y.applyUpdate(yDoc, data, conn.peer);
           console.log(`[${workspaceKey}] Sync update applied successfully`);
@@ -694,11 +726,16 @@ function setupConnection(workspaceKey: string, conn: DataConnection) {
 
     if (msg.type === "stateVector" && msg.data) {
       try {
-        const stateVector = msg.data instanceof Uint8Array ? msg.data : new Uint8Array(msg.data);
+        const stateVector =
+          msg.data instanceof Uint8Array ? msg.data : new Uint8Array(msg.data);
         if (yDoc) {
-          console.log(`[${workspaceKey}] Received stateVector from peer, encoding response`);
+          console.log(
+            `[${workspaceKey}] Received stateVector from peer, encoding response`
+          );
           const state = Y.encodeStateAsUpdate(yDoc, stateVector);
-          console.log(`[${workspaceKey}] Sending state response, size: ${state.length}`);
+          console.log(
+            `[${workspaceKey}] Sending state response, size: ${state.length}`
+          );
           conn.send({
             type: "sync",
             data: state,
@@ -718,7 +755,9 @@ function setupConnection(workspaceKey: string, conn: DataConnection) {
         return;
       }
 
-      console.log(`[${workspaceKey}] Connection opened with peer ${conn.peer}, subscribing to updates`);
+      console.log(
+        `[${workspaceKey}] Connection opened with peer ${conn.peer}, subscribing to updates`
+      );
 
       // Subscribe to future updates
       yDoc.on("update", updateHandler);

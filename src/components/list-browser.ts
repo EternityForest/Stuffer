@@ -1,6 +1,6 @@
 import { LitElement, html, css } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
-import { getItems, getItemContents, addItemToContents, removeItemFromContents, findItemByQR, createLoadout, getLoadout, addItemToLoadout, removeItemFromLoadout } from '../services/storage.js';
+import { getItems, getItemContents, addItemToContents, removeItemFromContents, findItemById, createLoadout, getLoadout, addItemToLoadout, removeItemFromLoadout } from '../services/storage.js';
 import jsQR from 'jsqr';
 
 @customElement('list-browser')
@@ -215,6 +215,7 @@ export class ListBrowser extends LitElement {
 
   private videoElement: HTMLVideoElement | null = null;
   private scanningInterval: number | null = null;
+  private updateListener: ((update: Uint8Array, origin: any) => void) | null = null;
 
   constructor() {
     super();
@@ -232,23 +233,42 @@ export class ListBrowser extends LitElement {
   disconnectedCallback() {
     super.disconnectedCallback();
     this.stopScanning();
+    this.cleanupYjsListener();
   }
 
   connectedCallback() {
     super.connectedCallback();
     this.loadItems();
-    // Listen for Yjs updates
+    this.setupYjsListener();
+  }
+
+  private setupYjsListener() {
     import('../services/storage.js').then(({ getYDoc }) => {
       try {
         const yDoc = getYDoc();
-        yDoc.on('update', () => {
+        this.updateListener = () => {
           this.loadItems();
           this.requestUpdate();
-        });
+        };
+        yDoc.on('update', this.updateListener);
       } catch (error) {
         console.error('Failed to subscribe to Yjs updates:', error);
       }
     });
+  }
+
+  private cleanupYjsListener() {
+    if (this.updateListener) {
+      import('../services/storage.js').then(({ getYDoc }) => {
+        try {
+          const yDoc = getYDoc();
+          yDoc.off('update', this.updateListener!);
+          this.updateListener = null;
+        } catch (error) {
+          console.error('Failed to unsubscribe from Yjs updates:', error);
+        }
+      });
+    }
   }
 
   updated(changedProperties: Map<string, any>) {
@@ -359,7 +379,7 @@ export class ListBrowser extends LitElement {
 
     try {
       const quantity = this.selectedQuantities.get(itemId) || 1;
-      addItemToContents(this.workspaceKey, this.containerId, itemId, itemName, quantity);
+      addItemToContents(this.workspaceKey, this.containerId, itemId, quantity);
       this.selectedQuantities.delete(itemId);
       this.showToast(`✓ Added ${itemName}`, 'success');
       // No need to reload since the item list doesn't change in add mode
@@ -386,7 +406,7 @@ export class ListBrowser extends LitElement {
 
     try {
       const quantity = this.selectedQuantities.get(itemId) || 1;
-      addItemToLoadout(this.workspaceKey, this.loadoutId, itemId, itemName, quantity);
+      addItemToLoadout(this.workspaceKey, this.loadoutId, itemId, quantity);
       this.selectedQuantities.delete(itemId);
       this.showToast(`✓ Added ${itemName}`, 'success');
     } catch (error) {
@@ -558,7 +578,7 @@ export class ListBrowser extends LitElement {
 
   private handleQRScan(qrData: string) {
     try {
-      const item = findItemByQR(this.workspaceKey, qrData);
+      const item = findItemById(this.workspaceKey, qrData);
 
       if (!item) {
         this.showToast('QR code not found', 'error');
@@ -571,7 +591,7 @@ export class ListBrowser extends LitElement {
       if (this.mode === 'add-to-contents') {
         // Add the found item to container
         const quantity = this.selectedQuantities.get(item.id) || 1;
-        addItemToContents(this.workspaceKey, this.containerId, item.id, item.name, quantity);
+        addItemToContents(this.workspaceKey, this.containerId, item.id,quantity);
         this.showToast(`✓ Added ${item.name}`, 'success');
       } else if (this.mode === 'remove-from-contents') {
         // Remove the found item from container

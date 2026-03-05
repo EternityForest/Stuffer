@@ -1,7 +1,8 @@
 import { LitElement, html, css } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
-import { getItem, updateItemProperty, getItemContents, getLoadouts, saveObjectAsLoadout, compareContentsToLoadout } from '../services/storage.js';
+import { getItem, updateItemProperty, getItemContents, getLoadouts, saveObjectAsLoadout, compareContentsToLoadout, deleteItem } from '../services/storage.js';
 import { compressImage } from '../services/imageCompression.js';
+import { deleteItem } from '../services/storage.js';
 
 @customElement('object-inspect')
 export class ObjectInspect extends LitElement {
@@ -211,6 +212,8 @@ export class ObjectInspect extends LitElement {
   @state()
   declare extraItems: Array<{ id: string; name: string; quantity: number }>;
 
+  private updateListener: ((update: Uint8Array, origin: any) => void) | null = null;
+
   constructor() {
     super();
     this.objectId = '';
@@ -229,18 +232,48 @@ export class ObjectInspect extends LitElement {
   connectedCallback() {
     super.connectedCallback();
     this.loadItem();
-    // Listen for Yjs updates
+    this.setupYjsListener();
+  }
+
+  disconnectedCallback() {
+    super.disconnectedCallback();
+    this.cleanupYjsListener();
+  }
+
+  private beginDelete() {
+    if(confirm('Are you sure you want to delete this item?')){
+      deleteItem(this.workspaceKey, this.objectId);
+      this.goBack();
+    }
+
+  }
+  private setupYjsListener() {
     import('../services/storage.js').then(({ getYDoc }) => {
       try {
         const yDoc = getYDoc();
-        yDoc.on('update', () => {
+        this.updateListener = () => {
           this.loadItem();
           this.requestUpdate();
-        });
+        };
+        yDoc.on('update', this.updateListener);
       } catch (error) {
         console.error('Failed to subscribe to Yjs updates:', error);
       }
     });
+  }
+
+  private cleanupYjsListener() {
+    if (this.updateListener) {
+      import('../services/storage.js').then(({ getYDoc }) => {
+        try {
+          const yDoc = getYDoc();
+          yDoc.off('update', this.updateListener!);
+          this.updateListener = null;
+        } catch (error) {
+          console.error('Failed to unsubscribe from Yjs updates:', error);
+        }
+      });
+    }
   }
 
   updated(changedProperties: Map<string, any>) {
@@ -347,6 +380,7 @@ export class ObjectInspect extends LitElement {
     return html`
       <div class="header">
         <h2>Object Details</h2>
+        <button @click=${() => this.beginDelete()} class="danger">Delete</button>
         <button @click=${() => this.goBack()}>Back</button>
       </div>
       <div class="content">

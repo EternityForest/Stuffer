@@ -1,6 +1,6 @@
 import { LitElement, html, css } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
-import { addItem, findItemByQR, deleteItem } from '../services/storage.js';
+import { addItem, findItemById, deleteItem } from '../services/storage.js';
 import jsQR from 'jsqr';
 
 @customElement('add-remove-item')
@@ -291,12 +291,23 @@ export class AddRemoveItem extends LitElement {
               placeholder="Enter item name (will generate UUID)"
               .value=${this.itemName}
               @input=${(e: Event) => { this.itemName = (e.target as HTMLInputElement).value; }}
-              @keydown=${(e: KeyboardEvent) => { if (e.key === 'Enter') this.addManualItem(); }}
+              @keydown=${(e: KeyboardEvent) => { if (e.key === 'Enter') this.addScannedItem(); }}
+            />
+          </div>
+
+          <div class="input-group">
+            <label>Item ID</label>
+
+            <input
+              type="text"
+              placeholder="Auto generate UUID"
+              .value=${this.qrData}
+              @input=${(e: Event) => { this.qrData = (e.target as HTMLInputElement).value; }}
             />
           </div>
 
           <div class="action-buttons">
-            <button @click=${() => this.addManualItem()}>Add Item</button>
+            <button @click=${() => this.addScannedItem()}>Add Item</button>
             <button @click=${() => this.toggleScanning()}>${this.isScanning ? 'Stop Scanning' : 'Scan QR Code'}</button>
           </div>
         ` : html`
@@ -321,12 +332,7 @@ export class AddRemoveItem extends LitElement {
         ` : ''}
 
         ${this.mode === 'add' && this.qrData && !this.isScanning ? html`
-          <div class="input-group">
-            <label>Scanned QR Data</label>
-            <div class="scan-result">${this.qrData}</div>
-          </div>
           <div class="action-buttons">
-            <button @click=${() => this.addScannedItem()}>Add Scanned Item</button>
             <button class="secondary-btn" @click=${() => this.clearScan()}>Clear Scan</button>
           </div>
         ` : ''}
@@ -349,26 +355,6 @@ export class AddRemoveItem extends LitElement {
     this.itemName = '';
   }
 
-  private addManualItem() {
-    if (!this.itemName.trim()) {
-      this.showToast('Please enter an item name', 'error');
-      return;
-    }
-
-    if (!this.workspaceKey) {
-      this.showToast('No workspace selected', 'error');
-      return;
-    }
-
-    try {
-      addItem(this.workspaceKey, this.itemName);
-      this.showToast(`✓ "${this.itemName}" added`, 'success');
-      this.itemName = '';
-    } catch (error) {
-      this.showToast(`Failed to add item: ${error}`, 'error');
-    }
-  }
-
   private addScannedItem() {
     if (!this.itemName.trim()) {
       this.showToast('Please enter an item name', 'error');
@@ -381,8 +367,13 @@ export class AddRemoveItem extends LitElement {
     }
 
     try {
-      addItem(this.workspaceKey, this.itemName, this.qrData);
-      this.showToast(`✓ "${this.itemName}" added with QR`, 'success');
+      if(this.qrData.trim().length > 0) {
+        addItem(this.workspaceKey, this.itemName, this.qrData);
+      }
+      else {
+        addItem(this.workspaceKey, this.itemName);
+      }
+      this.showToast(`✓ "${this.itemName}" added`, 'success');
       this.itemName = '';
       this.qrData = '';
       // Keep scanning active for fast entry
@@ -410,7 +401,7 @@ export class AddRemoveItem extends LitElement {
 
   private handleAddMode(qrData: string) {
     try {
-      const existingItem = findItemByQR(this.workspaceKey, qrData);
+      const existingItem = findItemById(this.workspaceKey, qrData);
 
       if (existingItem) {
         // Item already exists, just show toast
@@ -431,7 +422,7 @@ export class AddRemoveItem extends LitElement {
 
   private handleRemoveMode(qrData: string) {
     try {
-      const itemToRemove = findItemByQR(this.workspaceKey, qrData);
+      const itemToRemove = findItemById(this.workspaceKey, qrData);
 
       if (itemToRemove) {
         deleteItem(this.workspaceKey, itemToRemove.id);

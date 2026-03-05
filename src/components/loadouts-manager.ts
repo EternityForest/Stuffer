@@ -129,6 +129,8 @@ export class LoadoutsManager extends LitElement {
   @state()
   declare loadouts: Array<{ id: string; title: string; description: string; itemCount: number; createdAt: string }>;
 
+  private updateListener: ((update: Uint8Array, origin: any) => void) | null = null;
+
   constructor() {
     super();
     this.workspaceKey = '';
@@ -138,18 +140,41 @@ export class LoadoutsManager extends LitElement {
   connectedCallback() {
     super.connectedCallback();
     this.loadLoadouts();
-    // Listen for Yjs updates
+    this.setupYjsListener();
+  }
+
+  disconnectedCallback() {
+    super.disconnectedCallback();
+    this.cleanupYjsListener();
+  }
+
+  private setupYjsListener() {
     import('../services/storage.js').then(({ getYDoc }) => {
       try {
         const yDoc = getYDoc();
-        yDoc.on('update', () => {
+        this.updateListener = () => {
           this.loadLoadouts();
           this.requestUpdate();
-        });
+        };
+        yDoc.on('update', this.updateListener);
       } catch (error) {
         console.error('Failed to subscribe to Yjs updates:', error);
       }
     });
+  }
+
+  private cleanupYjsListener() {
+    if (this.updateListener) {
+      import('../services/storage.js').then(({ getYDoc }) => {
+        try {
+          const yDoc = getYDoc();
+          yDoc.off('update', this.updateListener!);
+          this.updateListener = null;
+        } catch (error) {
+          console.error('Failed to unsubscribe from Yjs updates:', error);
+        }
+      });
+    }
   }
 
   updated(changedProperties: Map<string, any>) {
