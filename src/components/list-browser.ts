@@ -307,11 +307,7 @@ export class ListBrowser extends LitElement {
       } else if (this.mode === "edit-loadout" && this.loadoutId) {
         // For edit loadout mode, load items that are IN the loadout
         const loadout = await getLoadout(this.workspaceKey, this.loadoutId);
-        this.items = loadout.contents.map((content) => ({
-          id: content.id,
-          name: lookupItemName(this.workspaceKey, content.id),
-          createdAt: new Date().toISOString(),
-        }));
+        this.items = loadout.contents;
       } else {
         // For add-to-contents and create-loadout modes, load all items in workspace
         this.items = await getItems(this.workspaceKey);

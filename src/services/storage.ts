@@ -412,18 +412,18 @@ export async function getLoadouts(workspaceKey: string) {
 export async function getLoadout(workspaceKey: string, loadoutId: string) {
   const doc = await getWorkspaceDoc(workspaceKey);
   const loadoutsMap = doc.getMap("loadouts") as Y.Map<any>;
-  const loadout = loadoutsMap.getMap(loadoutId) as Y.Map<any>;
+  const loadout = loadoutsMap.get(loadoutId) as Y.Map<any>;
   if (!loadout) throw new Error("Loadout not found");
 
   const contentsMap = loadout.get("contents") as Y.Map<any>;
   const contents: Array<{ id: string; name: string;}> = [];
 
-  contentsMap.forEach((content, id) => {
+  for (const [id, _content] of contentsMap) {
     contents.push({
       id,
-      name: (content as Y.Map<any>).get("name") as string,
+      name:await lookupItemName(workspaceKey, id),
     });
-  });
+  };
 
   return {
     id: loadoutId,
@@ -442,7 +442,7 @@ export async function updateLoadoutProperty(
 ) {
   const doc = await getWorkspaceDoc(workspaceKey);
   const loadoutsMap = doc.getMap("loadouts") as Y.Map<any>;
-  const loadout = loadoutsMap.getMap(loadoutId) as Y.Map<any>;
+  const loadout = loadoutsMap.get(loadoutId) as Y.Map<any>;
   if (!loadout) throw new Error("Loadout not found");
 
   loadout.set(property, value);
@@ -455,7 +455,7 @@ export async function addItemToLoadout(
 ) {
   const doc = await getWorkspaceDoc(workspaceKey);
   const loadoutsMap = doc.getMap("loadouts") as Y.Map<any>;
-  const loadout = loadoutsMap.getMap(loadoutId) as Y.Map<any>;
+  const loadout = loadoutsMap.get(loadoutId) as Y.Map<any>;
   if (!loadout) throw new Error("Loadout not found");
 
   // Remove item from any other loadouts first
@@ -480,7 +480,7 @@ export async function removeItemFromLoadout(
 ) {
   const doc = await getWorkspaceDoc(workspaceKey);
   const loadoutsMap = doc.getMap("loadouts") as Y.Map<any>;
-  const loadout = loadoutsMap.getMap(loadoutId) as Y.Map<any>;
+  const loadout = loadoutsMap.get(loadoutId) as Y.Map<any>;
   if (!loadout) throw new Error("Loadout not found");
 
   const contentsMap = loadout.get("contents") as Y.Map<any>;
