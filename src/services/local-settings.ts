@@ -4,10 +4,8 @@
  */
 
 interface WorkspaceLocalSettings {
-  syncRoomKey?: string;
-  lastSyncConnectionTime?: number;
-  syncRetryCount?: number;
-  syncLastError?: string;
+  syncPeerId?: string;
+  localPeerId?: string;
 }
 
 const STORAGE_KEY = 'stuffer:workspace-settings';
@@ -46,55 +44,6 @@ export function setWorkspaceLocalSettings(workspaceKey: string, settings: Partia
   saveLocalSettings(allSettings);
 }
 
-export function getSyncRoomKey(workspaceKey: string): string {
-  const settings = getWorkspaceLocalSettings(workspaceKey);
-  return settings.syncRoomKey || workspaceKey;
-}
-
-export function setSyncRoomKey(workspaceKey: string, roomKey: string) {
-  setWorkspaceLocalSettings(workspaceKey, { syncRoomKey: roomKey });
-}
-
-
-export function recordWebRTCConnectionAttempt(workspaceKey: string) {
-  const settings = getWorkspaceLocalSettings(workspaceKey);
-  const retryCount = (settings.syncRetryCount || 0) + 1;
-
-  setWorkspaceLocalSettings(workspaceKey, {
-    lastSyncConnectionTime: Date.now(),
-    syncRetryCount: retryCount,
-    syncLastError: undefined,
-  });
-
-  return retryCount;
-}
-
-export function recordWebRTCError(workspaceKey: string, error: string) {
-  setWorkspaceLocalSettings(workspaceKey, {
-    syncLastError: error,
-  });
-}
-
-export function clearWebRTCRetryCount(workspaceKey: string) {
-  setWorkspaceLocalSettings(workspaceKey, {
-    syncRetryCount: 0,
-    syncLastError: undefined,
-  });
-}
-
-/**
- * Calculate exponential backoff delay in milliseconds
- * Formula: min(maxDelay, baseDelay * (2 ^ retryCount - 1)) + randomJitter
- */
-export function getWebRTCRetryDelay(retryCount: number, baseDelay = 1000, maxDelay = 30000): number {
-  const exponentialDelay = baseDelay * Math.pow(2, Math.max(0, retryCount - 1));
-  const cappedDelay = Math.min(maxDelay, exponentialDelay);
-  const jitter = Math.random() * 0.1 * cappedDelay; // 0-10% jitter
-
-  return cappedDelay + jitter;
-}
-
-export function getWebRTCRetryCount(workspaceKey: string): number {
-  const settings = getWorkspaceLocalSettings(workspaceKey);
-  return settings.syncRetryCount || 0;
+export function setWorkspaceLocalSettingKey(workspaceKey: string, key: string, value: any) {
+  setWorkspaceLocalSettings(workspaceKey, { [key]: value });
 }

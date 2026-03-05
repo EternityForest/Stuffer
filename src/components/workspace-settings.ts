@@ -1,7 +1,8 @@
 import { LitElement, html, css } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
-import { getWorkspace, getWebRTCStatus, updateWorkspaceSyncKey, enableWebRTC, disconnectWebRTC } from '../services/storage.js';
-import { getSyncRoomKey } from '../services/local-settings.js';
+import { getWorkspace, getWebRTCStatus, updateWorkspaceSyncPeerId, enableWebRTC, disconnectWebRTC, updateWorkspaceLocalPeerId } from '../services/storage.js';
+import { getWorkspaceLocalSettings } from '../services/local-settings.js';
+import { generateUUID } from '../utils/uuid.js';
 
 @customElement('workspace-settings')
 export class WorkspaceSettings extends LitElement {
@@ -218,6 +219,9 @@ export class WorkspaceSettings extends LitElement {
   declare syncKey: string;
 
   @state()
+  declare localPeerId: string;
+
+  @state()
   declare editingSyncKey: boolean;
 
   @state()
@@ -245,6 +249,7 @@ export class WorkspaceSettings extends LitElement {
     this.workspaceKey = '';
     this.workspaceName = '';
     this.syncKey = '';
+    this.localPeerId = '';
     this.editingSyncKey = false;
     this.newSyncKey = '';
     this.connected = false;
@@ -275,7 +280,8 @@ export class WorkspaceSettings extends LitElement {
       if (workspace) {
         this.workspaceName = (workspace as any).get('name') as string;
         // Get sync key from local settings, not from synced workspace
-        this.syncKey = getSyncRoomKey(this.workspaceKey);
+        this.syncKey = getWorkspaceLocalSettings(this.workspaceKey).syncPeerId || '';
+        this.localPeerId = getWorkspaceLocalSettings(this.workspaceKey).localPeerId || '';
         this.newSyncKey = this.syncKey;
       }
     } catch (error) {
@@ -305,6 +311,32 @@ export class WorkspaceSettings extends LitElement {
     }
   }
 
+
+  private startRegenLocalKey() {
+    if(confirm('Are you sure you want to regenerate the local sync key?')) {
+      try {
+        const uuid = generateUUID();
+        updateWorkspaceLocalPeerId(this.workspaceKey, uuid);
+        this.loadWorkspaceData();
+      } catch (error) {
+        console.error('Failed to regenerate local sync key:', error);
+        this.error = 'Failed to regenerate local sync key';
+      }
+    }
+  }
+
+  private startClearLocalKey() {
+    if(confirm('Are you sure you want to clear the local sync key?')) {
+      try {
+        updateWorkspaceLocalPeerId(this.workspaceKey, '');
+        this.loadWorkspaceData();
+      } catch (error) {
+        console.error('Failed to clear local sync key:', error);
+        this.error = 'Failed to clear local sync key';
+      }
+    }
+  }
+
   private startEditSyncKey() {
     this.editingSyncKey = true;
     this.newSyncKey = this.syncKey;
@@ -315,7 +347,7 @@ export class WorkspaceSettings extends LitElement {
     this.newSyncKey = this.syncKey;
   }
 
-  private updateSyncKey() {
+  private updateSyncRemoteKey() {
     if (!this.workspaceKey || !this.newSyncKey.trim()) {
       this.error = 'Sync key cannot be empty';
       return;
@@ -327,7 +359,7 @@ export class WorkspaceSettings extends LitElement {
     }
 
     try {
-      updateWorkspaceSyncKey(this.workspaceKey, this.newSyncKey);
+      updateWorkspaceSyncPeerId(this.workspaceKey, this.newSyncKey);
       this.syncKey = this.newSyncKey;
       this.editingSyncKey = false;
       this.error = null;
@@ -413,7 +445,7 @@ export class WorkspaceSettings extends LitElement {
                 Changing the sync key will disconnect from current peers and connect to a new room.
               </div>
               <div class="button-group">
-                <button @click=${() => this.updateSyncKey()}>Save Key</button>
+                <button @click=${() => this.updateSyncRemoteKey()}>Save Key</button>
                 <button class="danger" @click=${() => this.cancelEditSyncKey()}>Cancel</button>
               </div>
             </div>
@@ -424,6 +456,13 @@ export class WorkspaceSettings extends LitElement {
               <button @click=${() => this.startEditSyncKey()} style="margin-top: 0.5rem; width: 100%;">Edit Sync Key</button>
             </div>
           `}
+
+          <div class="form-group">
+              <label>Local Peer ID</label>
+              <input type="text" class="readonly" .value=${this.localPeerId} readonly />
+              <button @click=${() => this.startRegenLocalKey()} style="margin-top: 0.5rem; width: 100%;">Regenerate Local Peer ID</button>
+              <button @click=${() => this.startClearLocalKey()} style="margin-top: 0.5rem; width: 100%;">Clear local ID/Disable Sync</button>  
+          </div>
         </div>
 
         <div class="section">

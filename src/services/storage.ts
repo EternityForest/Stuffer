@@ -1,14 +1,10 @@
 import * as Y from 'yjs';
 import { IndexeddbPersistence } from 'y-indexeddb';
 import Peer, { type DataConnection } from 'peerjs';
+import { generateUUID } from './uuid.js';
 import {
-  getSyncRoomKey,
-  setSyncRoomKey,
-  getWebRTCRetryDelay,
-  getWebRTCRetryCount,
-  recordWebRTCConnectionAttempt,
-  recordWebRTCError,
-  clearWebRTCRetryCount,
+  setWorkspaceLocalSettingKey,
+  getWorkspaceLocalSettings,
 } from './local-settings.js';
 
 let yDoc: Y.Doc | null = null;
@@ -470,13 +466,7 @@ export function compareContentsToLoadout(workspaceKey: string, objectId: string)
   }
 }
 
-function generateUUID(): string {
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
-    const r = (Math.random() * 16) | 0;
-    const v = c === 'x' ? r : (r & 0x3) | 0x8;
-    return v.toString(16);
-  });
-}
+
 
 const webrtcRetryTimers = new Map<string, number>();
 
@@ -494,10 +484,13 @@ export function enableWebRTC(workspaceKey: string, signalingServers: string[] = 
     if (!workspace) throw new Error('Workspace not found');
 
     // Use room key from local settings, not from synced workspace
-    const roomName = getSyncRoomKey(workspaceKey);
+    const localPeerId = getWorkspaceLocalSettings(workspaceKey).localPeerId || '';
 
-    if (!roomName || roomName.trim() === '') {
-      console.log(`Skipping sync for workspace ${workspaceKey}: sync key is empty`);
+    const remotePeerId = workspace.get('syncPeerId') || '';
+
+
+    if (!localPeerId || localPeerId.trim() === '') {
+      console.log(`Skipping sync for workspace ${workspaceKey}: Local peer ID is empty`);
       return null as any;
     }
 
@@ -516,7 +509,10 @@ export function enableWebRTC(workspaceKey: string, signalingServers: string[] = 
 
     // On open: connect to room rendezvous point
     peer.on('open', (myPeerId) => {
-      connectToRoom(workspaceKey, roomName, myPeerId, peer);
+      if(!remotePeerId || remotePeerId.trim() === ''){ 
+        return;
+      }
+      connectToRoom(workspaceKey, localPeerId, myPeerId, peer);
     });
 
     // On incoming connection: accept and set up sync
@@ -527,17 +523,15 @@ export function enableWebRTC(workspaceKey: string, signalingServers: string[] = 
     // Error handling with existing retry logic
     peer.on('error', (err) => {
       const errorMsg = err instanceof Error ? err.message : String(err);
-      recordWebRTCError(workspaceKey, errorMsg);
       console.error('PeerJS error:', err);
       scheduleWebRTCRetry(workspaceKey);
     });
 
     clearWebRTCRetryTimers(workspaceKey);
-    console.log(`Sync enabled for workspace ${workspaceKey} (room: ${roomName})`);
+    console.log(`Sync enabled for workspace ${workspaceKey} (room: ${localPeerId})`);
     return peer;
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error);
-    recordWebRTCError(workspaceKey, errorMsg);
     console.error('Failed to enable sync:', error);
 
     // Schedule retry with exponential backoff
@@ -546,9 +540,9 @@ export function enableWebRTC(workspaceKey: string, signalingServers: string[] = 
   }
 }
 
-function connectToRoom(workspaceKey: string, roomKey: string, myPeerId: string, peer: Peer) {
+function connectToRoom(workspaceKey: string, remotePeerId: string, myPeerId: string, peer: Peer) {
   // Connect to room rendezvous peer
-  const roomConn = peer.connect(roomKey);
+  const roomConn = peer.connect(remotePeerId);
 
   roomConn.on('open', () => {
     // Announce ourselves
@@ -583,7 +577,7 @@ function connectToRoom(workspaceKey: string, roomKey: string, myPeerId: string, 
     // Remove from connections when room connection closes
     const conns = peerConnections.get(workspaceKey);
     if (conns) {
-      conns.delete(roomKey);
+      conns.delete(remotePeerId);
     }
   });
 
@@ -591,7 +585,7 @@ function connectToRoom(workspaceKey: string, roomKey: string, myPeerId: string, 
   if (!peerConnections.has(workspaceKey)) {
     peerConnections.set(workspaceKey, new Map());
   }
-  peerConnections.get(workspaceKey)!.set(roomKey, roomConn);
+  peerConnections.get(workspaceKey)!.set(remotePeerId, roomConn);
 }
 
 function setupConnection(workspaceKey: string, conn: DataConnection) {
@@ -716,12 +710,25 @@ function clearWebRTCRetryTimers(workspaceKey: string) {
     webrtcRetryTimers.delete(workspaceKey);
   }
 }
+const webrtcRetryStateByWorkspace = new Map<string, { lastRetryCount: number }>();
+
+/**
+ * Calculate exponential backoff delay in milliseconds
+ * Formula: min(maxDelay, baseDelay * (2 ^ retryCount - 1)) + randomJitter
+ */
+export function getWebRTCRetryDelay(retryCount: number, baseDelay = 1000, maxDelay = 480000): number {
+  const exponentialDelay = baseDelay * Math.pow(2, Math.max(0, retryCount - 1));
+  const cappedDelay = Math.min(maxDelay, exponentialDelay);
+  const jitter = Math.random() * 0.1 * cappedDelay; // 0-10% jitter
+
+  return cappedDelay + jitter;
+}
 
 function scheduleWebRTCRetry(workspaceKey: string) {
   // Clear any existing retry timer
   clearWebRTCRetryTimers(workspaceKey);
 
-  const retryCount = recordWebRTCConnectionAttempt(workspaceKey);
+  const retryCount = webrtcRetryStateByWorkspace.get(workspaceKey)?.lastRetryCount || 0;
   const delayMs = getWebRTCRetryDelay(retryCount);
 
   console.log(`Scheduling WebRTC retry for ${workspaceKey} in ${Math.round(delayMs)}ms (attempt ${retryCount})`);
@@ -749,7 +756,7 @@ export function getWebRTCStatus(workspaceKey: string): {
 } {
   const peer = peerInstances.get(workspaceKey);
   const connections = peerConnections.get(workspaceKey);
-  const retryCount = getWebRTCRetryCount(workspaceKey);
+  const retryCount = webrtcRetryStateByWorkspace.get(workspaceKey)?.lastRetryCount || 0;
 
   if (!peer || !peer.open) {
     return {
@@ -772,14 +779,35 @@ export function getWebRTCStatus(workspaceKey: string): {
   };
 }
 
-export function updateWorkspaceSyncKey(workspaceKey: string, newSyncKey: string) {
+
+
+export function updateWorkspaceLocalPeerId(workspaceKey: string, newSyncKey: string) {
   if (!workspacesMap) throw new Error('Workspaces map not initialized');
 
   const workspace = workspacesMap.get(workspaceKey) as Y.Map<any>;
   if (!workspace) throw new Error('Workspace not found');
 
   // Save to local settings, not to synced workspace
-  setSyncRoomKey(workspaceKey, newSyncKey);
+  setWorkspaceLocalSettingKey(workspaceKey, "localPeerId", newSyncKey);
+
+  // Reconnect with new room
+  try {
+    disconnectWebRTC(workspaceKey);
+    enableWebRTC(workspaceKey);
+  } catch (error) {
+    console.error('Failed to reconnect WebRTC after sync key change:', error);
+  }
+}
+
+
+export function updateWorkspaceSyncPeerId(workspaceKey: string, newSyncKey: string) {
+  if (!workspacesMap) throw new Error('Workspaces map not initialized');
+
+  const workspace = workspacesMap.get(workspaceKey) as Y.Map<any>;
+  if (!workspace) throw new Error('Workspace not found');
+
+  // Save to local settings, not to synced workspace
+  setWorkspaceLocalSettingKey(workspaceKey, 'syncPeerId', newSyncKey);
 
   // Reconnect with new room
   try {
@@ -799,7 +827,7 @@ export function updateWorkspaceProperty(workspaceKey: string, property: string, 
   // Don't sync syncRoomKey through the shared workspace
   if (property === 'syncRoomKey') {
     console.warn('Use updateWorkspaceSyncKey() instead of updateWorkspaceProperty() for syncRoomKey');
-    return updateWorkspaceSyncKey(workspaceKey, value);
+    return updateWorkspaceSyncPeerId(workspaceKey, value);
   }
 
   workspace.set(property, value);

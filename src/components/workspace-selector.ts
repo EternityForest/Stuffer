@@ -134,15 +134,11 @@ export class WorkspaceSelector extends LitElement {
   declare workspaceName: string;
 
   @state()
-  declare syncKey: string;
-
-  @state()
   declare workspaces: Array<{ key: string; name: string }>;
 
   constructor() {
     super();
     this.workspaceName = '';
-    this.syncKey = '';
     this.workspaces = [];
   }
 
@@ -171,9 +167,8 @@ export class WorkspaceSelector extends LitElement {
 
   private handleCreate() {
     if (this.workspaceName.trim()) {
-      const key = createWorkspace(this.workspaceName, this.syncKey || undefined);
+      const key = createWorkspace(this.workspaceName);
       this.workspaceName = '';
-      this.syncKey = '';
       this.loadWorkspaces();
     }
   }
@@ -208,12 +203,6 @@ export class WorkspaceSelector extends LitElement {
             placeholder="Workspace Name"
             .value=${this.workspaceName}
             @input=${(e: Event) => { this.workspaceName = (e.target as HTMLInputElement).value; }}
-          />
-          <input
-            type="text"
-            placeholder="Sync Key (optional)"
-            .value=${this.syncKey}
-            @input=${(e: Event) => { this.syncKey = (e.target as HTMLInputElement).value; }}
           />
           <button type="submit">Create Workspace</button>
         </form>
