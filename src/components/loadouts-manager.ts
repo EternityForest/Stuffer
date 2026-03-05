@@ -151,7 +151,7 @@ export class LoadoutsManager extends LitElement {
   private setupYjsListener() {
     import('../services/storage.js').then(({ getYDoc }) => {
       try {
-        const yDoc = getYDoc();
+        const yDoc = getYDoc(this.workspaceKey);
         this.updateListener = () => {
           this.loadLoadouts();
           this.requestUpdate();
@@ -167,7 +167,7 @@ export class LoadoutsManager extends LitElement {
     if (this.updateListener) {
       import('../services/storage.js').then(({ getYDoc }) => {
         try {
-          const yDoc = getYDoc();
+          const yDoc = getYDoc(this.workspaceKey);
           yDoc.off('update', this.updateListener!);
           this.updateListener = null;
         } catch (error) {

@@ -264,9 +264,9 @@ export class WorkspaceSettings extends LitElement {
     this.importSuccess = null;
   }
 
-  connectedCallback() {
+  async connectedCallback() {
     super.connectedCallback();
-    this.loadWorkspaceData();
+    await this.loadWorkspaceData();
     this.startStatusPolling();
   }
 
@@ -277,11 +277,11 @@ export class WorkspaceSettings extends LitElement {
     }
   }
 
-  private loadWorkspaceData() {
+  private async loadWorkspaceData() {
     if (!this.workspaceKey) return;
 
     try {
-      const workspace = getWorkspace(this.workspaceKey);
+      const workspace = await getWorkspace(this.workspaceKey);
       if (workspace) {
         this.workspaceName = (workspace as any).get('name') as string;
         // Get sync key from local settings, not from synced workspace
@@ -317,12 +317,12 @@ export class WorkspaceSettings extends LitElement {
   }
 
 
-  private startRegenLocalKey() {
+  private async startRegenLocalKey() {
     if(confirm('Are you sure you want to regenerate the local sync key?')) {
       try {
         const uuid = generateUUID();
-        updateWorkspaceLocalPeerId(this.workspaceKey, uuid);
-        this.loadWorkspaceData();
+        await updateWorkspaceLocalPeerId(this.workspaceKey, uuid);
+        await this.loadWorkspaceData();
       } catch (error) {
         console.error('Failed to regenerate local sync key:', error);
         this.error = 'Failed to regenerate local sync key';
@@ -330,11 +330,11 @@ export class WorkspaceSettings extends LitElement {
     }
   }
 
-  private startClearLocalKey() {
+  private async startClearLocalKey() {
     if(confirm('Are you sure you want to clear the local sync key?')) {
       try {
-        updateWorkspaceLocalPeerId(this.workspaceKey, '');
-        this.loadWorkspaceData();
+        await updateWorkspaceLocalPeerId(this.workspaceKey, '');
+        await this.loadWorkspaceData();
       } catch (error) {
         console.error('Failed to clear local sync key:', error);
         this.error = 'Failed to clear local sync key';
@@ -352,14 +352,14 @@ export class WorkspaceSettings extends LitElement {
     this.newsyncToPeer = this.syncToPeer;
   }
 
-  private updateSyncRemoteKey() {
+  private async updateSyncRemoteKey() {
     if (this.newsyncToPeer === this.syncToPeer) {
       this.editingsyncToPeer = false;
       return;
     }
 
     try {
-      updateWorkspaceSyncPeerId(this.workspaceKey, this.newsyncToPeer);
+      await updateWorkspaceSyncPeerId(this.workspaceKey, this.newsyncToPeer);
       this.syncToPeer = this.newsyncToPeer;
       this.editingsyncToPeer = false;
       this.error = null;
@@ -381,7 +381,7 @@ export class WorkspaceSettings extends LitElement {
     }
   }
 
-  private reconnect() {
+  private async reconnect() {
     if (!this.workspaceKey) return;
 
     if (!this.localPeerId || this.localPeerId.trim() === '') {
@@ -390,7 +390,7 @@ export class WorkspaceSettings extends LitElement {
     }
 
     try {
-      enableWebRTC(this.workspaceKey);
+      await enableWebRTC(this.workspaceKey);
       setTimeout(() => this.updateStatus(), 500);
     } catch (error) {
       console.error('Failed to reconnect WebRTC:', error);
@@ -406,14 +406,14 @@ export class WorkspaceSettings extends LitElement {
     }));
   }
 
-  private handleExport() {
+  private async handleExport() {
     if (!this.workspaceKey) {
       this.error = 'Workspace key not available';
       return;
     }
 
     try {
-      const state = exportWorkspaceState(this.workspaceKey);
+      const state = await exportWorkspaceState(this.workspaceKey);
       downloadWorkspaceFile(this.workspaceKey, state);
       this.importSuccess = 'Workspace exported successfully';
       setTimeout(() => { this.importSuccess = null; }, 3000);
@@ -423,7 +423,7 @@ export class WorkspaceSettings extends LitElement {
     }
   }
 
-  private handleImportFile(e: Event) {
+  private async handleImportFile(e: Event) {
     const input = e.target as HTMLInputElement;
     const file = input.files?.[0];
 
@@ -435,11 +435,11 @@ export class WorkspaceSettings extends LitElement {
     }
 
     const reader = new FileReader();
-    reader.onload = (event) => {
+    reader.onload = async (event) => {
       try {
         const arrayBuffer = event.target?.result as ArrayBuffer;
         const uint8Array = new Uint8Array(arrayBuffer);
-        importWorkspaceState(this.workspaceKey, uint8Array);
+        await importWorkspaceState(this.workspaceKey, uint8Array);
         this.importSuccess = 'Workspace imported and merged successfully';
         setTimeout(() => { this.importSuccess = null; }, 3000);
         // Reset file input

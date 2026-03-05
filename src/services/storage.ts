@@ -8,9 +8,17 @@ import {
 } from "./local-settings.js";
 import convert from "convert";
 
-let yDoc: Y.Doc | null = null;
-let workspacesMap: Y.Map<any> | null = null;
-let initPromise: Promise<Y.Doc> | null = null;
+interface WorkspaceMetadata {
+  name: string;
+  createdAt: string;
+  syncRoomKey: string;
+}
+
+// Workspace registry (persisted to localStorage)
+const workspaceRegistry = new Map<string, WorkspaceMetadata>();
+const workspaceDocs = new Map<string, Y.Doc>();
+const workspacePersistence = new Map<string, IndexeddbPersistence>();
+let initPromise: Promise<void> | null = null;
 
 // Per-workspace peer instance
 const peerInstances = new Map<string, Peer>();
@@ -21,93 +29,156 @@ const peerConnections = new Map<string, Map<string, DataConnection>>();
 // Track connected peers per workspace
 const connectedPeers = new Map<string, Set<string>>();
 
-export async function initializeYDoc() {
-  if (yDoc && workspacesMap) return yDoc;
+// Registry key for localStorage
+const REGISTRY_KEY = "stuffer:workspace-registry";
 
+// Registry persistence helpers
+function loadWorkspaceRegistry(): Map<string, WorkspaceMetadata> {
+  try {
+    const stored = localStorage.getItem(REGISTRY_KEY);
+    if (!stored) return new Map();
+    const data = JSON.parse(stored);
+    return new Map(Object.entries(data)) as Map<string, WorkspaceMetadata>;
+  } catch (error) {
+    console.error("Failed to load workspace registry:", error);
+    return new Map();
+  }
+}
+
+function saveWorkspaceRegistry(): void {
+  try {
+    const data = Object.fromEntries(workspaceRegistry);
+    localStorage.setItem(REGISTRY_KEY, JSON.stringify(data));
+  } catch (error) {
+    console.error("Failed to save workspace registry:", error);
+  }
+}
+
+// Initialize by loading workspace registry
+export async function initializeYDoc() {
   if (initPromise) return initPromise;
 
   initPromise = (async () => {
-    if (!yDoc) {
-      yDoc = new Y.Doc();
-
-      // Enable IndexedDB persistence for offline support
-      const persistence = new IndexeddbPersistence("stuffer-db", yDoc);
-
-      // Wait for persistence to load from IndexedDB
-      await new Promise<void>((resolve) => {
-        const checkSynced = () => {
-          if (persistence.synced) {
-            resolve();
-          } else {
-            setTimeout(checkSynced, 50);
-          }
-        };
-        checkSynced();
-      });
-
-      // Give IndexedDB a moment to fully populate the doc
-      await new Promise((resolve) => setTimeout(resolve, 100));
-    }
-
-    // Initialize workspaces map (do this after persistence is loaded)
-    if (!workspacesMap) {
-      workspacesMap = yDoc.getMap("workspaces");
-    }
-
-    return yDoc;
+    const registry = loadWorkspaceRegistry();
+    workspaceRegistry.clear();
+    registry.forEach((meta, key) => workspaceRegistry.set(key, meta));
   })();
 
-  const result = await initPromise;
-  // Ensure workspacesMap is set before returning
-  if (!workspacesMap) {
-    workspacesMap = yDoc!.getMap("workspaces");
+  await initPromise;
+}
+
+// Get or create a workspace Y.Doc
+async function getWorkspaceDoc(workspaceKey: string): Promise<Y.Doc> {
+  if (workspaceDocs.has(workspaceKey)) {
+    return workspaceDocs.get(workspaceKey)!;
+  }
+
+  // Create new Y.Doc for workspace
+  const doc = new Y.Doc();
+  const persistence = new IndexeddbPersistence(
+    `stuffer-workspace-${workspaceKey}`,
+    doc
+  );
+
+  // Wait for sync
+  await new Promise<void>((resolve) => {
+    const checkSynced = () => {
+      if (persistence.synced) {
+        resolve();
+      } else {
+        setTimeout(checkSynced, 50);
+      }
+    };
+    checkSynced();
+  });
+
+  // Give IndexedDB a moment to fully populate the doc
+  await new Promise((resolve) => setTimeout(resolve, 100));
+
+  workspaceDocs.set(workspaceKey, doc);
+  workspacePersistence.set(workspaceKey, persistence);
+  return doc;
+}
+
+export function getYDoc(workspaceKey: string) {
+  return workspaceDocs.get(workspaceKey)!;
+}
+
+// Export for component listeners
+export async function getWorkspaceDocExported(workspaceKey: string): Promise<Y.Doc> {
+  return getWorkspaceDoc(workspaceKey);
+}
+
+// Return list of workspaces from registry
+export async function getWorkspacesMap() {
+  const result = new Map<string, { name: string; key: string }>();
+  for (const [key, metadata] of workspaceRegistry) {
+    result.set(key, { name: metadata.name, key });
   }
   return result;
 }
 
-export function getYDoc(): Y.Doc {
-  if (!yDoc) throw new Error("YDoc not initialized");
-  return yDoc;
-}
-
-export function getWorkspacesMap(): Y.Map<any> {
-  if (!workspacesMap) throw new Error("Workspaces map not initialized");
-  return workspacesMap;
-}
-
-export function createWorkspace(name: string) {
-  if (!workspacesMap) throw new Error("Workspaces map not initialized");
-
+export async function createWorkspace(name: string) {
   const workspaceKey = `workspace-${Date.now()}`;
-  const workspace = new Y.Map();
 
-  workspace.set("name", name);
-  workspace.set("syncRoomKey", workspaceKey);
-  workspace.set("objects", new Y.Map());
-  workspace.set("loadouts", new Y.Map());
+  // Create metadata
+  const metadata: WorkspaceMetadata = {
+    name,
+    createdAt: new Date().toISOString(),
+    syncRoomKey: workspaceKey,
+  };
 
-  workspacesMap.set(workspaceKey, workspace);
+  // Add to registry
+  workspaceRegistry.set(workspaceKey, metadata);
+  saveWorkspaceRegistry();
+
+  // Create and initialize workspace doc
+  const doc = await getWorkspaceDoc(workspaceKey);
+  const metadataMap = doc.getMap("metadata");
+  doc.getMap("objects"); // Initialize objects map
+  doc.getMap("loadouts"); // Initialize loadouts map
+
+  metadataMap.set("name", name);
+  metadataMap.set("syncRoomKey", workspaceKey);
 
   return workspaceKey;
 }
 
-export function getWorkspace(key: string) {
-  if (!workspacesMap) throw new Error("Workspaces map not initialized");
-  return workspacesMap.get(key);
+export async function getWorkspace(key: string) {
+  const doc = await getWorkspaceDoc(key);
+  return doc.getMap("metadata");
 }
 
-export function deleteWorkspace(key: string) {
-  if (!workspacesMap) throw new Error("Workspaces map not initialized");
-  workspacesMap.delete(key);
+export async function deleteWorkspace(key: string) {
+  // Remove from registry
+  workspaceRegistry.delete(key);
+  saveWorkspaceRegistry();
+
+  // Destroy doc and persistence
+  const doc = workspaceDocs.get(key);
+  const persistence = workspacePersistence.get(key);
+
+  if (persistence) {
+    persistence.destroy();
+    workspacePersistence.delete(key);
+  }
+
+  if (doc) {
+    doc.destroy();
+    workspaceDocs.delete(key);
+  }
+
+  // Delete from IndexedDB
+  await new Promise<void>((resolve, reject) => {
+    const req = indexedDB.deleteDatabase(`stuffer-workspace-${key}`);
+    req.onsuccess = () => resolve();
+    req.onerror = () => reject(req.error);
+  });
 }
 
-export function addItem(workspaceKey: string, itemName: string, uuid?: string) {
-  if (!workspacesMap) throw new Error("Workspaces map not initialized");
-
-  const workspace = workspacesMap.get(workspaceKey) as Y.Map<any>;
-  if (!workspace) throw new Error("Workspace not found");
-
-  const objectsMap = workspace.get("objects") as Y.Map<any>;
+export async function addItem(workspaceKey: string, itemName: string, uuid?: string) {
+  const doc = await getWorkspaceDoc(workspaceKey);
+  const objectsMap = doc.get("objects") as Y.Map<any>;
   const itemId = uuid || generateItemId();
 
   const item = new Y.Map();
@@ -122,13 +193,9 @@ export function addItem(workspaceKey: string, itemName: string, uuid?: string) {
   return itemId;
 }
 
-export function getItems(workspaceKey: string) {
-  if (!workspacesMap) throw new Error("Workspaces map not initialized");
-
-  const workspace = workspacesMap.get(workspaceKey) as Y.Map<any>;
-  if (!workspace) throw new Error("Workspace not found");
-
-  const objectsMap = workspace.get("objects") as Y.Map<any>;
+export async function getItems(workspaceKey: string) {
+  const doc = await getWorkspaceDoc(workspaceKey);
+  const objectsMap = doc.get("objects") as Y.Map<any>;
   const items: Array<{
     id: string;
     name: string;
@@ -146,42 +213,30 @@ export function getItems(workspaceKey: string) {
   return items;
 }
 
-export function findItemById(workspaceKey: string, ulid: string) {
-  if (!workspacesMap) throw new Error("Workspaces map not initialized");
-
-  const workspace = workspacesMap.get(workspaceKey) as Y.Map<any>;
-  if (!workspace) throw new Error("Workspace not found");
-
-  const objectsMap = workspace.get("objects") as Y.Map<any>;
-
+export async function findItemById(workspaceKey: string, ulid: string) {
+  const doc = await getWorkspaceDoc(workspaceKey);
+  const objectsMap = doc.get("objects") as Y.Map<any>;
   return objectsMap.get(ulid) as Y.Map<any>;
 }
 
-export function lookupItemName(workspaceKey: string, item: string) {
+export async function lookupItemName(workspaceKey: string, itemId: string) {
   try {
-    return getItem(workspaceKey, item).name;
+    const item = await getItem(workspaceKey, itemId);
+    return item.name;
   } catch (e) {
     return "Unknown";
   }
 }
 
-export function deleteItem(workspaceKey: string, itemId: string) {
-  if (!workspacesMap) throw new Error("Workspaces map not initialized");
-
-  const workspace = workspacesMap.get(workspaceKey) as Y.Map<any>;
-  if (!workspace) throw new Error("Workspace not found");
-
-  const objectsMap = workspace.get("objects") as Y.Map<any>;
+export async function deleteItem(workspaceKey: string, itemId: string) {
+  const doc = await getWorkspaceDoc(workspaceKey);
+  const objectsMap = doc.get("objects") as Y.Map<any>;
   objectsMap.delete(itemId);
 }
 
-export function getItem(workspaceKey: string, itemId: string) {
-  if (!workspacesMap) throw new Error("Workspaces map not initialized");
-
-  const workspace = workspacesMap.get(workspaceKey) as Y.Map<any>;
-  if (!workspace) throw new Error("Workspace not found");
-
-  const objectsMap = workspace.get("objects") as Y.Map<any>;
+export async function getItem(workspaceKey: string, itemId: string) {
+  const doc = await getWorkspaceDoc(workspaceKey);
+  const objectsMap = doc.get("objects") as Y.Map<any>;
   const item = objectsMap.get(itemId) as Y.Map<any>;
   if (!item) throw new Error("Item not found");
 
@@ -196,31 +251,23 @@ export function getItem(workspaceKey: string, itemId: string) {
   };
 }
 
-export function updateItemProperty(
+export async function updateItemProperty(
   workspaceKey: string,
   itemId: string,
   property: string,
   value: any
 ) {
-  if (!workspacesMap) throw new Error("Workspaces map not initialized");
-
-  const workspace = workspacesMap.get(workspaceKey) as Y.Map<any>;
-  if (!workspace) throw new Error("Workspace not found");
-
-  const objectsMap = workspace.get("objects") as Y.Map<any>;
+  const doc = await getWorkspaceDoc(workspaceKey);
+  const objectsMap = doc.get("objects") as Y.Map<any>;
   const item = objectsMap.get(itemId) as Y.Map<any>;
   if (!item) throw new Error("Item not found");
 
   item.set(property, value);
 }
 
-export function getItemContents(workspaceKey: string, itemId: string) {
-  if (!workspacesMap) throw new Error("Workspaces map not initialized");
-
-  const workspace = workspacesMap.get(workspaceKey) as Y.Map<any>;
-  if (!workspace) throw new Error("Workspace not found");
-
-  const objectsMap = workspace.get("objects") as Y.Map<any>;
+export async function getItemContents(workspaceKey: string, itemId: string) {
+  const doc = await getWorkspaceDoc(workspaceKey);
+  const objectsMap = doc.get("objects") as Y.Map<any>;
   const item = objectsMap.get(itemId) as Y.Map<any>;
   if (!item) throw new Error("Item not found");
 
@@ -234,13 +281,13 @@ export function getItemContents(workspaceKey: string, itemId: string) {
 
   const contents: Array<{ id: string; name: string; }> = [];
 
-  contentsMap.forEach((_content, id) => {
+  contentsMap.forEach(async (_content, id) => {
     try {
-      const item = getItem(workspaceKey, id);
-      if (item) {
+      const foundItem = await getItem(workspaceKey, id);
+      if (foundItem) {
         contents.push({
           id,
-          name: lookupItemName(workspaceKey, id),
+          name: await lookupItemName(workspaceKey, id),
         });
       }
     } catch (e) {
@@ -255,17 +302,13 @@ export function getItemContents(workspaceKey: string, itemId: string) {
   return contents;
 }
 
-export function addItemToContents(
+export async function addItemToContents(
   workspaceKey: string,
   containerId: string,
   itemId: string,
 ) {
-  if (!workspacesMap) throw new Error("Workspaces map not initialized");
-
-  const workspace = workspacesMap.get(workspaceKey) as Y.Map<any>;
-  if (!workspace) throw new Error("Workspace not found");
-
-  const objectsMap = workspace.get("objects") as Y.Map<any>;
+  const doc = await getWorkspaceDoc(workspaceKey);
+  const objectsMap = doc.get("objects") as Y.Map<any>;
   const container = objectsMap.get(containerId) as Y.Map<any>;
   if (!container) throw new Error("Container not found");
 
@@ -284,17 +327,13 @@ export function addItemToContents(
   contentsMap.set(itemId, content);
 }
 
-export function removeItemFromContents(
+export async function removeItemFromContents(
   workspaceKey: string,
   containerId: string,
   contentItemId: string
 ) {
-  if (!workspacesMap) throw new Error("Workspaces map not initialized");
-
-  const workspace = workspacesMap.get(workspaceKey) as Y.Map<any>;
-  if (!workspace) throw new Error("Workspace not found");
-
-  const objectsMap = workspace.get("objects") as Y.Map<any>;
+  const doc = await getWorkspaceDoc(workspaceKey);
+  const objectsMap = doc.get("objects") as Y.Map<any>;
   const container = objectsMap.get(containerId) as Y.Map<any>;
   if (!container) throw new Error("Container not found");
 
@@ -302,18 +341,14 @@ export function removeItemFromContents(
   contentsMap.delete(contentItemId);
 }
 
-export function createLoadout(
+export async function createLoadout(
   workspaceKey: string,
   title: string,
   description: string = "",
   contents: Array<{ itemId: string;}> = []
 ) {
-  if (!workspacesMap) throw new Error("Workspaces map not initialized");
-
-  const workspace = workspacesMap.get(workspaceKey) as Y.Map<any>;
-  if (!workspace) throw new Error("Workspace not found");
-
-  const loadoutsMap = workspace.get("loadouts") as Y.Map<any>;
+  const doc = await getWorkspaceDoc(workspaceKey);
+  const loadoutsMap = doc.get("loadouts") as Y.Map<any>;
   const loadoutId = generateItemId();
 
   const loadout = new Y.Map();
@@ -333,22 +368,13 @@ export function createLoadout(
   return loadoutId;
 }
 
-export function saveObjectAsLoadout(
+export async function saveObjectAsLoadout(
   workspaceKey: string,
   objectId: string,
   title: string,
   description: string = ""
 ) {
-  if (!workspacesMap) throw new Error("Workspaces map not initialized");
-
-  const workspace = workspacesMap.get(workspaceKey) as Y.Map<any>;
-  if (!workspace) throw new Error("Workspace not found");
-
-  const objectsMap = workspace.get("objects") as Y.Map<any>;
-  const object = objectsMap.get(objectId) as Y.Map<any>;
-  if (!object) throw new Error("Object not found");
-
-  const objectContents = getItemContents(workspaceKey, objectId);
+  const objectContents = await getItemContents(workspaceKey, objectId);
   return createLoadout(
     workspaceKey,
     title,
@@ -388,13 +414,9 @@ export function getLoadouts(workspaceKey: string) {
   return loadouts;
 }
 
-export function getLoadout(workspaceKey: string, loadoutId: string) {
-  if (!workspacesMap) throw new Error("Workspaces map not initialized");
-
-  const workspace = workspacesMap.get(workspaceKey) as Y.Map<any>;
-  if (!workspace) throw new Error("Workspace not found");
-
-  const loadoutsMap = workspace.get("loadouts") as Y.Map<any>;
+export async function getLoadout(workspaceKey: string, loadoutId: string) {
+  const doc = await getWorkspaceDoc(workspaceKey);
+  const loadoutsMap = doc.get("loadouts") as Y.Map<any>;
   const loadout = loadoutsMap.get(loadoutId) as Y.Map<any>;
   if (!loadout) throw new Error("Loadout not found");
 
@@ -417,35 +439,27 @@ export function getLoadout(workspaceKey: string, loadoutId: string) {
   };
 }
 
-export function updateLoadoutProperty(
+export async function updateLoadoutProperty(
   workspaceKey: string,
   loadoutId: string,
   property: string,
   value: any
 ) {
-  if (!workspacesMap) throw new Error("Workspaces map not initialized");
-
-  const workspace = workspacesMap.get(workspaceKey) as Y.Map<any>;
-  if (!workspace) throw new Error("Workspace not found");
-
-  const loadoutsMap = workspace.get("loadouts") as Y.Map<any>;
+  const doc = await getWorkspaceDoc(workspaceKey);
+  const loadoutsMap = doc.get("loadouts") as Y.Map<any>;
   const loadout = loadoutsMap.get(loadoutId) as Y.Map<any>;
   if (!loadout) throw new Error("Loadout not found");
 
   loadout.set(property, value);
 }
 
-export function addItemToLoadout(
+export async function addItemToLoadout(
   workspaceKey: string,
   loadoutId: string,
   itemId: string,
 ) {
-  if (!workspacesMap) throw new Error("Workspaces map not initialized");
-
-  const workspace = workspacesMap.get(workspaceKey) as Y.Map<any>;
-  if (!workspace) throw new Error("Workspace not found");
-
-  const loadoutsMap = workspace.get("loadouts") as Y.Map<any>;
+  const doc = await getWorkspaceDoc(workspaceKey);
+  const loadoutsMap = doc.get("loadouts") as Y.Map<any>;
   const loadout = loadoutsMap.get(loadoutId) as Y.Map<any>;
   if (!loadout) throw new Error("Loadout not found");
 
@@ -464,17 +478,13 @@ export function addItemToLoadout(
   contentsMap.set(itemId, content);
 }
 
-export function removeItemFromLoadout(
+export async function removeItemFromLoadout(
   workspaceKey: string,
   loadoutId: string,
   itemId: string
 ) {
-  if (!workspacesMap) throw new Error("Workspaces map not initialized");
-
-  const workspace = workspacesMap.get(workspaceKey) as Y.Map<any>;
-  if (!workspace) throw new Error("Workspace not found");
-
-  const loadoutsMap = workspace.get("loadouts") as Y.Map<any>;
+  const doc = await getWorkspaceDoc(workspaceKey);
+  const loadoutsMap = doc.get("loadouts") as Y.Map<any>;
   const loadout = loadoutsMap.get(loadoutId) as Y.Map<any>;
   if (!loadout) throw new Error("Loadout not found");
 
@@ -482,29 +492,21 @@ export function removeItemFromLoadout(
   contentsMap.delete(itemId);
 }
 
-export function deleteLoadout(workspaceKey: string, loadoutId: string) {
-  if (!workspacesMap) throw new Error("Workspaces map not initialized");
-
-  const workspace = workspacesMap.get(workspaceKey) as Y.Map<any>;
-  if (!workspace) throw new Error("Workspace not found");
-
-  const loadoutsMap = workspace.get("loadouts") as Y.Map<any>;
+export async function deleteLoadout(workspaceKey: string, loadoutId: string) {
+  const doc = await getWorkspaceDoc(workspaceKey);
+  const loadoutsMap = doc.get("loadouts") as Y.Map<any>;
   loadoutsMap.delete(loadoutId);
 }
 
-export function compareContentsToLoadout(
+export async function compareContentsToLoadout(
   workspaceKey: string,
   objectId: string
-): {
+): Promise<{
   missing: Array<{ id: string; name: string; quantity: number }>;
   extra: Array<{ id: string; name: string; quantity: number }>;
-} {
-  if (!workspacesMap) throw new Error("Workspaces map not initialized");
-
-  const workspace = workspacesMap.get(workspaceKey) as Y.Map<any>;
-  if (!workspace) throw new Error("Workspace not found");
-
-  const objectsMap = workspace.get("objects") as Y.Map<any>;
+}> {
+  const doc = await getWorkspaceDoc(workspaceKey);
+  const objectsMap = doc.get("objects") as Y.Map<any>;
   const object = objectsMap.get(objectId) as Y.Map<any>;
   if (!object) throw new Error("Object not found");
 
@@ -514,8 +516,8 @@ export function compareContentsToLoadout(
   }
 
   try {
-    const loadout = getLoadout(workspaceKey, selectedLoadoutId);
-    const objectContents = getItemContents(workspaceKey, objectId);
+    const loadout = await getLoadout(workspaceKey, selectedLoadoutId);
+    const objectContents = await getItemContents(workspaceKey, objectId);
 
     // Create maps for easy comparison
     const loadoutMap = new Map(loadout.contents.map((c) => [c.id, c]));
@@ -528,7 +530,7 @@ export function compareContentsToLoadout(
       if (!loadoutMap.has(id)) {
         extra.push({
           id,
-          name: lookupItemName(workspaceKey, id),
+          name: await lookupItemName(workspaceKey, id),
           quantity: 1
         });
       }
@@ -538,7 +540,7 @@ export function compareContentsToLoadout(
       if (!objectMap.has(id)) {
         missing.push({
           id,
-          name: lookupItemName(workspaceKey, id),
+          name: await lookupItemName(workspaceKey, id),
           quantity: 1
       })
     }}
@@ -551,12 +553,11 @@ export function compareContentsToLoadout(
 
 const webrtcRetryTimers = new Map<string, number>();
 
-export function enableWebRTC(
+export async function enableWebRTC(
   workspaceKey: string,
   signalingServers: string[] = []
 ) {
-  if (!yDoc) throw new Error("YDoc not initialized");
-  if (!workspacesMap) throw new Error("Workspaces map not initialized");
+  const doc = await getWorkspaceDoc(workspaceKey);
 
   // Disconnect any existing provider
   if (peerInstances.has(workspaceKey)) {
@@ -564,8 +565,6 @@ export function enableWebRTC(
   }
 
   try {
-    const workspace = workspacesMap.get(workspaceKey) as Y.Map<any>;
-    if (!workspace) throw new Error("Workspace not found");
 
     // Use room key from local settings, not from synced workspace
     const localPeerId =
@@ -643,150 +642,150 @@ function connectToPeer(
 }
 
 function setupConnection(workspaceKey: string, conn: DataConnection) {
-  if (!yDoc) {
-    console.error("YDoc not initialized for sync");
-    conn.close();
-    return;
-  }
-
-  // Track this peer as connected
-  if (!connectedPeers.has(workspaceKey)) {
-    connectedPeers.set(workspaceKey, new Set());
-  }
-  connectedPeers.get(workspaceKey)!.add(conn.peer);
-
-  let synced = false;
-
-  // Listen for document updates and sync to this peer
-  const updateHandler = (update: Uint8Array) => {
-    try {
-      if (conn.open) {
-        console.log(
-          `[${workspaceKey}] Sending update to peer ${conn.peer}, size: ${update.length}`
-        );
-        conn.send({
-          type: "sync",
-          data: update,
-        });
-      }
-    } catch (error) {
-      console.error("Failed to send sync message:", error);
+  // Get workspace doc asynchronously
+  getWorkspaceDoc(workspaceKey).then((doc) => {
+    // Track this peer as connected
+    if (!connectedPeers.has(workspaceKey)) {
+      connectedPeers.set(workspaceKey, new Set());
     }
-  };
+    connectedPeers.get(workspaceKey)!.add(conn.peer);
 
-  // Handle incoming messages
-  conn.on("data", (msg: any) => {
-    console.log(
-      `[${workspaceKey}] Received message type: ${msg.type} from peer ${conn.peer}, data type: ${msg.data?.constructor?.name}`
-    );
+    let synced = false;
 
-    if (msg.type === "syncReady") {
+    // Listen for document updates and sync to this peer
+    const updateHandler = (update: Uint8Array) => {
       try {
-        if (yDoc) {
+        if (conn.open) {
           console.log(
-            `[${workspaceKey}] Peer is ready, sending our full state`
-          );
-          const stateVector = Y.encodeStateVector(yDoc);
-          console.log(
-            `[${workspaceKey}] Sending state vector to peer ${conn.peer}, size: ${stateVector.length}`
-          );
-          conn.send({
-            type: "stateVector",
-            data: stateVector,
-          });
-        }
-      } catch (error) {
-        console.error("Failed to send state on syncReady:", error);
-      }
-    }
-
-    if (msg.type === "sync" && msg.data) {
-      try {
-        if (yDoc) {
-          const data =
-            msg.data instanceof Uint8Array
-              ? msg.data
-              : new Uint8Array(msg.data);
-          console.log(
-            `[${workspaceKey}] Applying sync update from peer, size: ${data.length}`
-          );
-          Y.logUpdate(data);
-          Y.applyUpdate(yDoc, data, conn.peer);
-          console.log(`[${workspaceKey}] Sync update applied successfully`);
-        }
-      } catch (error) {
-        console.error("Failed to apply sync update:", error);
-      }
-    }
-
-    if (msg.type === "stateVector" && msg.data) {
-      try {
-        const stateVector =
-          msg.data instanceof Uint8Array ? msg.data : new Uint8Array(msg.data);
-        if (yDoc) {
-          console.log(
-            `[${workspaceKey}] Received stateVector from peer, encoding response`
-          );
-          const state = Y.encodeStateAsUpdate(yDoc, stateVector);
-          console.log(
-            `[${workspaceKey}] Sending state response, size: ${state.length}`
+            `[${workspaceKey}] Sending update to peer ${conn.peer}, size: ${update.length}`
           );
           conn.send({
             type: "sync",
-            data: state,
+            data: update,
           });
         }
       } catch (error) {
-        console.error("Failed to handle stateVector:", error);
+        console.error("Failed to send sync message:", error);
       }
-    }
-  });
+    };
 
-  // On connection, exchange initial state and subscribe to updates
-  conn.on("open", () => {
-    try {
-      if (!yDoc) {
-        console.error("YDoc is null during connection open");
-        return;
-      }
-
+    // Handle incoming messages
+    conn.on("data", (msg: any) => {
       console.log(
-        `[${workspaceKey}] Connection opened with peer ${conn.peer}, subscribing to updates`
+        `[${workspaceKey}] Received message type: ${msg.type} from peer ${conn.peer}, data type: ${msg.data?.constructor?.name}`
       );
 
-      // Subscribe to future updates
-      yDoc.on("update", updateHandler);
+      if (msg.type === "syncReady") {
+        try {
+          if (doc) {
+            console.log(
+              `[${workspaceKey}] Peer is ready, sending our full state`
+            );
+            const stateVector = Y.encodeStateVector(doc);
+            console.log(
+              `[${workspaceKey}] Sending state vector to peer ${conn.peer}, size: ${stateVector.length}`
+            );
+            conn.send({
+              type: "stateVector",
+              data: stateVector,
+            });
+          }
+        } catch (error) {
+          console.error("Failed to send state on syncReady:", error);
+        }
+      }
 
-      // Send a signal that we're ready to sync
-      conn.send({
-        type: "syncReady",
-      });
+      if (msg.type === "sync" && msg.data) {
+        try {
+          if (doc) {
+            const data =
+              msg.data instanceof Uint8Array
+                ? msg.data
+                : new Uint8Array(msg.data);
+            console.log(
+              `[${workspaceKey}] Applying sync update from peer, size: ${data.length}`
+            );
+            Y.logUpdate(data);
+            Y.applyUpdate(doc, data, conn.peer);
+            console.log(`[${workspaceKey}] Sync update applied successfully`);
+          }
+        } catch (error) {
+          console.error("Failed to apply sync update:", error);
+        }
+      }
 
-      synced = true;
-      webrtcRetryStateByWorkspace.set(workspaceKey, { lastRetryCount: 0 });
-      console.log(`[${workspaceKey}] Connection ready with peer ${conn.peer}`);
-    } catch (error) {
-      console.error("Failed to sync initial state:", error);
+      if (msg.type === "stateVector" && msg.data) {
+        try {
+          const stateVector =
+            msg.data instanceof Uint8Array ? msg.data : new Uint8Array(msg.data);
+          if (doc) {
+            console.log(
+              `[${workspaceKey}] Received stateVector from peer, encoding response`
+            );
+            const state = Y.encodeStateAsUpdate(doc, stateVector);
+            console.log(
+              `[${workspaceKey}] Sending state response, size: ${state.length}`
+            );
+            conn.send({
+              type: "sync",
+              data: state,
+            });
+          }
+        } catch (error) {
+          console.error("Failed to handle stateVector:", error);
+        }
+      }
+    });
+
+    // On connection, exchange initial state and subscribe to updates
+    conn.on("open", () => {
+      try {
+        if (!doc) {
+          console.error("Doc is null during connection open");
+          return;
+        }
+
+        console.log(
+          `[${workspaceKey}] Connection opened with peer ${conn.peer}, subscribing to updates`
+        );
+
+        // Subscribe to future updates
+        doc.on("update", updateHandler);
+
+        // Send a signal that we're ready to sync
+        conn.send({
+          type: "syncReady",
+        });
+
+        synced = true;
+        webrtcRetryStateByWorkspace.set(workspaceKey, { lastRetryCount: 0 });
+        console.log(`[${workspaceKey}] Connection ready with peer ${conn.peer}`);
+      } catch (error) {
+        console.error("Failed to sync initial state:", error);
+      }
+    });
+
+    conn.on("close", () => {
+      // Unsubscribe from updates
+      if (synced && doc) {
+        doc.off("update", updateHandler);
+      }
+
+      // Remove from connected peers
+      const peers = connectedPeers.get(workspaceKey);
+      if (peers) {
+        peers.delete(conn.peer);
+      }
+    });
+
+    if (!peerConnections.has(workspaceKey)) {
+      peerConnections.set(workspaceKey, new Map());
     }
+    peerConnections.get(workspaceKey)!.set(conn.peer, conn);
+  }).catch((error) => {
+    console.error("Failed to setup connection:", error);
+    conn.close();
   });
-
-  conn.on("close", () => {
-    // Unsubscribe from updates
-    if (synced && yDoc) {
-      yDoc.off("update", updateHandler);
-    }
-
-    // Remove from connected peers
-    const peers = connectedPeers.get(workspaceKey);
-    if (peers) {
-      peers.delete(conn.peer);
-    }
-  });
-
-  if (!peerConnections.has(workspaceKey)) {
-    peerConnections.set(workspaceKey, new Map());
-  }
-  peerConnections.get(workspaceKey)!.set(conn.peer, conn);
 }
 
 export function disconnectWebRTC(workspaceKey: string) {
@@ -912,14 +911,11 @@ export function getWebRTCStatus(workspaceKey: string): {
   };
 }
 
-export function updateWorkspaceLocalPeerId(
+export async function updateWorkspaceLocalPeerId(
   workspaceKey: string,
   newSyncKey: string
 ) {
-  if (!workspacesMap) throw new Error("Workspaces map not initialized");
-
-  const workspace = workspacesMap.get(workspaceKey) as Y.Map<any>;
-  if (!workspace) throw new Error("Workspace not found");
+  await getWorkspaceDoc(workspaceKey);
 
   // Save to local settings, not to synced workspace
   setWorkspaceLocalSettingKey(workspaceKey, "localPeerId", newSyncKey);
@@ -927,20 +923,17 @@ export function updateWorkspaceLocalPeerId(
   // Reconnect with new room
   try {
     disconnectWebRTC(workspaceKey);
-    enableWebRTC(workspaceKey);
+    await enableWebRTC(workspaceKey);
   } catch (error) {
     console.error("Failed to reconnect WebRTC after sync key change:", error);
   }
 }
 
-export function updateWorkspaceSyncPeerId(
+export async function updateWorkspaceSyncPeerId(
   workspaceKey: string,
   newSyncKey: string
 ) {
-  if (!workspacesMap) throw new Error("Workspaces map not initialized");
-
-  const workspace = workspacesMap.get(workspaceKey) as Y.Map<any>;
-  if (!workspace) throw new Error("Workspace not found");
+  await getWorkspaceDoc(workspaceKey);
 
   // Save to local settings, not to synced workspace
   setWorkspaceLocalSettingKey(workspaceKey, "syncPeerId", newSyncKey);
@@ -948,21 +941,19 @@ export function updateWorkspaceSyncPeerId(
   // Reconnect with new room
   try {
     disconnectWebRTC(workspaceKey);
-    enableWebRTC(workspaceKey);
+    await enableWebRTC(workspaceKey);
   } catch (error) {
     console.error("Failed to reconnect WebRTC after sync key change:", error);
   }
 }
 
-export function updateWorkspaceProperty(
+export async function updateWorkspaceProperty(
   workspaceKey: string,
   property: string,
   value: any
 ) {
-  if (!workspacesMap) throw new Error("Workspaces map not initialized");
-
-  const workspace = workspacesMap.get(workspaceKey) as Y.Map<any>;
-  if (!workspace) throw new Error("Workspace not found");
+  const doc = await getWorkspaceDoc(workspaceKey);
+  const metadataMap = doc.getMap("metadata");
 
   // Don't sync syncRoomKey through the shared workspace
   if (property === "syncRoomKey") {
@@ -972,23 +963,19 @@ export function updateWorkspaceProperty(
     return updateWorkspaceSyncPeerId(workspaceKey, value);
   }
 
-  workspace.set(property, value);
+  metadataMap.set(property, value);
 }
 
 // Amount tracking functions
-export function addAmountUpdate(
+export async function addAmountUpdate(
   workspaceKey: string,
   itemId: string,
   type: 'set' | 'delta',
   unit: string,
   quantity: number
 ) {
-  if (!workspacesMap) throw new Error("Workspaces map not initialized");
-
-  const workspace = workspacesMap.get(workspaceKey) as Y.Map<any>;
-  if (!workspace) throw new Error("Workspace not found");
-
-  const objectsMap = workspace.get("objects") as Y.Map<any>;
+  const doc = await getWorkspaceDoc(workspaceKey);
+  const objectsMap = doc.get("objects") as Y.Map<any>;
   const item = objectsMap.get(itemId) as Y.Map<any>;
   if (!item) throw new Error("Item not found");
 
@@ -1008,13 +995,9 @@ export function addAmountUpdate(
   amountUpdates.push([updateEntry]);
 }
 
-export function getAmountUpdates(workspaceKey: string, itemId: string) {
-  if (!workspacesMap) throw new Error("Workspaces map not initialized");
-
-  const workspace = workspacesMap.get(workspaceKey) as Y.Map<any>;
-  if (!workspace) throw new Error("Workspace not found");
-
-  const objectsMap = workspace.get("objects") as Y.Map<any>;
+export async function getAmountUpdates(workspaceKey: string, itemId: string) {
+  const doc = await getWorkspaceDoc(workspaceKey);
+  const objectsMap = doc.get("objects") as Y.Map<any>;
   const item = objectsMap.get(itemId) as Y.Map<any>;
   if (!item) throw new Error("Item not found");
 
@@ -1043,17 +1026,13 @@ export function getAmountUpdates(workspaceKey: string, itemId: string) {
   return updates;
 }
 
-export function deleteAmountUpdate(
+export async function deleteAmountUpdate(
   workspaceKey: string,
   itemId: string,
   updateId: string
 ) {
-  if (!workspacesMap) throw new Error("Workspaces map not initialized");
-
-  const workspace = workspacesMap.get(workspaceKey) as Y.Map<any>;
-  if (!workspace) throw new Error("Workspace not found");
-
-  const objectsMap = workspace.get("objects") as Y.Map<any>;
+  const doc = await getWorkspaceDoc(workspaceKey);
+  const objectsMap = doc.get("objects") as Y.Map<any>;
   const item = objectsMap.get(itemId) as Y.Map<any>;
   if (!item) throw new Error("Item not found");
 
@@ -1069,18 +1048,14 @@ export function deleteAmountUpdate(
   }
 }
 
-export function updateAmountUpdate(
+export async function updateAmountUpdate(
   workspaceKey: string,
   itemId: string,
   updateId: string,
   changes: Partial<{ quantity: number; unit: string }>
 ) {
-  if (!workspacesMap) throw new Error("Workspaces map not initialized");
-
-  const workspace = workspacesMap.get(workspaceKey) as Y.Map<any>;
-  if (!workspace) throw new Error("Workspace not found");
-
-  const objectsMap = workspace.get("objects") as Y.Map<any>;
+  const doc = await getWorkspaceDoc(workspaceKey);
+  const objectsMap = doc.get("objects") as Y.Map<any>;
   const item = objectsMap.get(itemId) as Y.Map<any>;
   if (!item) throw new Error("Item not found");
 
@@ -1103,7 +1078,7 @@ export function updateAmountUpdate(
 
 export async function calculateCurrentAmount(workspaceKey: string, itemId: string) {
   try {
-    const updates = getAmountUpdates(workspaceKey, itemId);
+    const updates = await getAmountUpdates(workspaceKey, itemId);
     if (updates.length === 0) {
       return { amount: 0, unit: "", error: null };
     }
@@ -1132,8 +1107,6 @@ export async function calculateCurrentAmount(workspaceKey: string, itemId: strin
       baseUnit = sorted.find((u) => u.type === "delta")?.unit || "";
     }
 
-
-
     // Apply deltas after the base
     let currentAmount = baseAmount;
     for (let i = baseIndex + 1; i < sorted.length; i++) {
@@ -1143,7 +1116,7 @@ export async function calculateCurrentAmount(workspaceKey: string, itemId: strin
         if (update.unit !== baseUnit && baseUnit) {
           // Try to convert
           try {
-            const converted = convert(update.quantity,update.unit).to(baseUnit);
+            const converted = convert(update.quantity, update.unit as any).to(baseUnit as any) as unknown as number;
             currentAmount += converted;
           } catch (e) {
             return {
@@ -1165,18 +1138,14 @@ export async function calculateCurrentAmount(workspaceKey: string, itemId: strin
   }
 }
 
-export function updateLastScanned(
+export async function updateLastScanned(
   workspaceKey: string,
   itemId: string,
   latitude?: number,
   longitude?: number
 ) {
-  if (!workspacesMap) throw new Error("Workspaces map not initialized");
-
-  const workspace = workspacesMap.get(workspaceKey) as Y.Map<any>;
-  if (!workspace) throw new Error("Workspace not found");
-
-  const objectsMap = workspace.get("objects") as Y.Map<any>;
+  const doc = await getWorkspaceDoc(workspaceKey);
+  const objectsMap = doc.get("objects") as Y.Map<any>;
   const item = objectsMap.get(itemId) as Y.Map<any>;
   if (!item) throw new Error("Item not found");
 
@@ -1185,4 +1154,36 @@ export function updateLastScanned(
     item.set("lastScannedLatitude", latitude);
     item.set("lastScannedLongitude", longitude);
   }
+}
+
+export async function exportWorkspaceState(workspaceKey: string): Promise<Uint8Array> {
+  const doc = await getWorkspaceDoc(workspaceKey);
+  return Y.encodeStateAsUpdate(doc);
+}
+
+export async function importWorkspaceState(workspaceKey: string, update: Uint8Array): Promise<void> {
+  const doc = await getWorkspaceDoc(workspaceKey);
+  Y.applyUpdate(doc, update, "import");
+}
+
+export function downloadWorkspaceFile(workspaceKey: string, data: Uint8Array): void {
+  const metadata = workspaceRegistry.get(workspaceKey);
+  const workspaceName = metadata?.name || "workspace";
+  const timestamp = Date.now();
+  const filename = `${workspaceName}-${timestamp}.invupd`;
+
+  // Create blob from Uint8Array
+  const blob = new Blob([data], { type: "application/octet-stream" });
+  const url = URL.createObjectURL(blob);
+
+  // Create anchor element and trigger download
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  document.body.removeChild(anchor);
+
+  // Clean up the URL object
+  URL.revokeObjectURL(url);
 }

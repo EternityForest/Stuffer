@@ -127,7 +127,7 @@ export class WorkspaceBrowser extends LitElement {
   private setupYjsListener() {
     import('../services/storage.js').then(({ getYDoc }) => {
       try {
-        const yDoc = getYDoc();
+        const yDoc = getYDoc(this.workspaceKey);
         this.updateListener = () => {
           this.loadItems();
           this.requestUpdate();
@@ -143,7 +143,7 @@ export class WorkspaceBrowser extends LitElement {
     if (this.updateListener) {
       import('../services/storage.js').then(({ getYDoc }) => {
         try {
-          const yDoc = getYDoc();
+          const yDoc = getYDoc(this.workspaceKey);
           yDoc.off('update', this.updateListener!);
           this.updateListener = null;
         } catch (error) {

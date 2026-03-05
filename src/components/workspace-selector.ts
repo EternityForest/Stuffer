@@ -155,17 +155,16 @@ export class WorkspaceSelector extends LitElement {
   async connectedCallback() {
     super.connectedCallback();
     await initializeYDoc();
-    this.loadWorkspaces();
+    await this.loadWorkspaces();
   }
 
-  private loadWorkspaces() {
+  private async loadWorkspaces() {
     try {
-      const workspacesMap = getWorkspacesMap();
+      const workspacesMap = await getWorkspacesMap();
       const workspacesList: Array<{ key: string; name: string }> = [];
 
-      workspacesMap.forEach((workspace, key) => {
-        const name = workspace.get('name') as string || key;
-        workspacesList.push({ key, name });
+      workspacesMap.forEach((workspace) => {
+        workspacesList.push(workspace);
       });
 
       this.workspaces = workspacesList;
@@ -175,11 +174,11 @@ export class WorkspaceSelector extends LitElement {
     }
   }
 
-  private handleCreate() {
+  private async handleCreate() {
     if (this.workspaceName.trim()) {
-      createWorkspace(this.workspaceName);
+      await createWorkspace(this.workspaceName);
       this.workspaceName = '';
-      this.loadWorkspaces();
+      await this.loadWorkspaces();
     }
   }
 
@@ -195,10 +194,10 @@ export class WorkspaceSelector extends LitElement {
     }
   }
 
-  private handleDelete(workspaceKey: string) {
+  private async handleDelete(workspaceKey: string) {
     if (confirm('Are you sure you want to delete this workspace?')) {
-      deleteWorkspace(workspaceKey);
-      this.loadWorkspaces();
+      await deleteWorkspace(workspaceKey);
+      await this.loadWorkspaces();
     }
   }
 

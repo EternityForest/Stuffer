@@ -416,7 +416,7 @@ export class ObjectInspect extends LitElement {
   private setupYjsListener() {
     import("../services/storage.js").then(({ getYDoc }) => {
       try {
-        const yDoc = getYDoc();
+        const yDoc = getYDoc(this.workspaceKey);
         this.updateListener = () => {
           this.loadItem();
           this.requestUpdate();
@@ -432,7 +432,7 @@ export class ObjectInspect extends LitElement {
     if (this.updateListener) {
       import("../services/storage.js").then(({ getYDoc }) => {
         try {
-          const yDoc = getYDoc();
+          const yDoc = getYDoc(this.workspaceKey);
           yDoc.off("update", this.updateListener!);
           this.updateListener = null;
         } catch (error) {
