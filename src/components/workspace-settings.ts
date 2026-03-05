@@ -216,16 +216,16 @@ export class WorkspaceSettings extends LitElement {
   declare workspaceName: string;
 
   @state()
-  declare syncKey: string;
+  declare syncToPeer: string;
 
   @state()
   declare localPeerId: string;
 
   @state()
-  declare editingSyncKey: boolean;
+  declare editingsyncToPeer: boolean;
 
   @state()
-  declare newSyncKey: string;
+  declare newsyncToPeer: string;
 
   @state()
   declare connected: boolean;
@@ -248,10 +248,10 @@ export class WorkspaceSettings extends LitElement {
     super();
     this.workspaceKey = '';
     this.workspaceName = '';
-    this.syncKey = '';
+    this.syncToPeer = '';
     this.localPeerId = '';
-    this.editingSyncKey = false;
-    this.newSyncKey = '';
+    this.editingsyncToPeer = false;
+    this.newsyncToPeer = '';
     this.connected = false;
     this.peerCount = 0;
     this.status = 'disconnected';
@@ -280,9 +280,9 @@ export class WorkspaceSettings extends LitElement {
       if (workspace) {
         this.workspaceName = (workspace as any).get('name') as string;
         // Get sync key from local settings, not from synced workspace
-        this.syncKey = getWorkspaceLocalSettings(this.workspaceKey).syncPeerId || '';
+        this.syncToPeer = getWorkspaceLocalSettings(this.workspaceKey).syncPeerId || '';
         this.localPeerId = getWorkspaceLocalSettings(this.workspaceKey).localPeerId || '';
-        this.newSyncKey = this.syncKey;
+        this.newsyncToPeer = this.syncToPeer;
       }
     } catch (error) {
       console.error('Failed to load workspace data:', error);
@@ -337,31 +337,26 @@ export class WorkspaceSettings extends LitElement {
     }
   }
 
-  private startEditSyncKey() {
-    this.editingSyncKey = true;
-    this.newSyncKey = this.syncKey;
+  private startEditsyncToPeer() {
+    this.editingsyncToPeer = true;
+    this.newsyncToPeer = this.syncToPeer;
   }
 
-  private cancelEditSyncKey() {
-    this.editingSyncKey = false;
-    this.newSyncKey = this.syncKey;
+  private cancelEditsyncToPeer() {
+    this.editingsyncToPeer = false;
+    this.newsyncToPeer = this.syncToPeer;
   }
 
   private updateSyncRemoteKey() {
-    if (!this.workspaceKey || !this.newSyncKey.trim()) {
-      this.error = 'Sync key cannot be empty';
-      return;
-    }
-
-    if (this.newSyncKey === this.syncKey) {
-      this.editingSyncKey = false;
+    if (this.newsyncToPeer === this.syncToPeer) {
+      this.editingsyncToPeer = false;
       return;
     }
 
     try {
-      updateWorkspaceSyncPeerId(this.workspaceKey, this.newSyncKey);
-      this.syncKey = this.newSyncKey;
-      this.editingSyncKey = false;
+      updateWorkspaceSyncPeerId(this.workspaceKey, this.newsyncToPeer);
+      this.syncToPeer = this.newsyncToPeer;
+      this.editingsyncToPeer = false;
       this.error = null;
     } catch (error) {
       console.error('Failed to update sync key:', error);
@@ -384,8 +379,8 @@ export class WorkspaceSettings extends LitElement {
   private reconnect() {
     if (!this.workspaceKey) return;
 
-    if (!this.syncKey || this.syncKey.trim() === '') {
-      this.error = 'Cannot reconnect: Sync key is empty';
+    if (!this.localPeerId || this.localPeerId.trim() === '') {
+      this.error = 'Cannot reconnect: Local peer ID is empty';
       return;
     }
 
@@ -432,13 +427,13 @@ export class WorkspaceSettings extends LitElement {
 
         <div class="section">
           <h3>Sync Configuration</h3>
-          ${this.editingSyncKey ? html`
+          ${this.editingsyncToPeer ? html`
             <div class="form-group">
-              <label>Sync Key</label>
+              <label>Sync to Peer</label>
               <input
                 type="text"
-                .value=${this.newSyncKey}
-                @input=${(e: Event) => { this.newSyncKey = (e.target as HTMLInputElement).value; }}
+                .value=${this.newsyncToPeer}
+                @input=${(e: Event) => { this.newsyncToPeer = (e.target as HTMLInputElement).value; }}
                 placeholder="Enter new sync key"
               />
               <div class="info">
@@ -446,14 +441,14 @@ export class WorkspaceSettings extends LitElement {
               </div>
               <div class="button-group">
                 <button @click=${() => this.updateSyncRemoteKey()}>Save Key</button>
-                <button class="danger" @click=${() => this.cancelEditSyncKey()}>Cancel</button>
+                <button class="danger" @click=${() => this.cancelEditsyncToPeer()}>Cancel</button>
               </div>
             </div>
           ` : html`
             <div class="form-group">
-              <label>Sync Key</label>
-              <input type="text" class="readonly" .value=${this.syncKey} readonly />
-              <button @click=${() => this.startEditSyncKey()} style="margin-top: 0.5rem; width: 100%;">Edit Sync Key</button>
+              <label>Sync To Peer</label>
+              <input type="text" class="readonly" .value=${this.syncToPeer} readonly />
+              <button @click=${() => this.startEditsyncToPeer()} style="margin-top: 0.5rem; width: 100%;">Edit Sync Key</button>
             </div>
           `}
 

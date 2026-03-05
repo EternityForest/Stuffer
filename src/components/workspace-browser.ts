@@ -1,6 +1,6 @@
 import { LitElement, html, css } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
-import { getItems, enableWebRTC, disconnectWebRTC } from '../services/storage.js';
+import { getItems } from '../services/storage.js';
 
 @customElement('workspace-browser')
 export class WorkspaceBrowser extends LitElement {
@@ -103,8 +103,6 @@ export class WorkspaceBrowser extends LitElement {
   @state()
   declare objects: Array<{ id: string; name: string; qrData?: string; createdAt: string }>;
 
-  private webrtcProvider: any = null;
-
   constructor() {
     super();
     this.workspaceName = '';
@@ -116,14 +114,10 @@ export class WorkspaceBrowser extends LitElement {
   connectedCallback() {
     super.connectedCallback();
     this.loadItems();
-    this.connectWebRTC();
   }
 
   disconnectedCallback() {
     super.disconnectedCallback();
-    if (this.workspaceKey) {
-      disconnectWebRTC(this.workspaceKey);
-    }
   }
 
   private loadItems() {
@@ -221,14 +215,7 @@ export class WorkspaceBrowser extends LitElement {
     }));
   }
 
-  private connectWebRTC() {
-    if (!this.workspaceKey) return;
-    try {
-      this.webrtcProvider = enableWebRTC(this.workspaceKey);
-    } catch (error) {
-      console.error('Failed to enable WebRTC:', error);
-    }
-  }
+
 
   private dispatchNavigate(screen: string) {
     this.dispatchEvent(new CustomEvent('navigate', {

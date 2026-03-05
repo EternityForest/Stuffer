@@ -1,6 +1,16 @@
 import { LitElement, html, css } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
 import { initializeYDoc, getWorkspacesMap, createWorkspace, deleteWorkspace } from '../services/storage.js';
+import { enableWebRTC } from '../services/storage.js';
+
+function reconnectWebRTC(workspaceKey: string) {
+  if (workspaceKey) return;
+  try {
+    enableWebRTC(workspaceKey);
+  } catch (error) {
+    console.error('Failed to enable WebRTC:', error);
+  }
+}
 
 @customElement('workspace-selector')
 export class WorkspaceSelector extends LitElement {
@@ -167,7 +177,7 @@ export class WorkspaceSelector extends LitElement {
 
   private handleCreate() {
     if (this.workspaceName.trim()) {
-      const key = createWorkspace(this.workspaceName);
+      createWorkspace(this.workspaceName);
       this.workspaceName = '';
       this.loadWorkspaces();
     }
@@ -176,6 +186,7 @@ export class WorkspaceSelector extends LitElement {
   private handleLoad(workspaceKey: string) {
     const workspace = this.workspaces.find(w => w.key === workspaceKey);
     if (workspace) {
+      reconnectWebRTC(workspace.key);
       this.dispatchEvent(new CustomEvent('select-workspace', {
         detail: workspace.key,
         bubbles: true,
