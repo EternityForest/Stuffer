@@ -276,7 +276,7 @@ export async function getItemContents(workspaceKey: string, itemId: string) {
 
   const contents: Array<{ id: string; name: string; }> = [];
 
-  contentsMap.forEach(async (_content, id) => {
+  for (const id of contentsMap.keys()) {
     try {
       const foundItem = await getItem(workspaceKey, id);
       if (foundItem) {
@@ -292,7 +292,7 @@ export async function getItemContents(workspaceKey: string, itemId: string) {
       });
       console.error(e);
     }
-  });
+  }
 
   return contents;
 }
@@ -318,6 +318,7 @@ export async function addItemToContents(
   const contentsMap = container.get("contents") as Y.Map<any>;
 
   const content = new Y.Map();
+  content.set("itemId", itemId);
 
   contentsMap.set(itemId, content);
 }
@@ -411,7 +412,7 @@ export async function getLoadouts(workspaceKey: string) {
 export async function getLoadout(workspaceKey: string, loadoutId: string) {
   const doc = await getWorkspaceDoc(workspaceKey);
   const loadoutsMap = doc.getMap("loadouts") as Y.Map<any>;
-  const loadout = loadoutsMap.get(loadoutId) as Y.Map<any>;
+  const loadout = loadoutsMap.getMap(loadoutId) as Y.Map<any>;
   if (!loadout) throw new Error("Loadout not found");
 
   const contentsMap = loadout.get("contents") as Y.Map<any>;
@@ -441,7 +442,7 @@ export async function updateLoadoutProperty(
 ) {
   const doc = await getWorkspaceDoc(workspaceKey);
   const loadoutsMap = doc.getMap("loadouts") as Y.Map<any>;
-  const loadout = loadoutsMap.get(loadoutId) as Y.Map<any>;
+  const loadout = loadoutsMap.getMap(loadoutId) as Y.Map<any>;
   if (!loadout) throw new Error("Loadout not found");
 
   loadout.set(property, value);
@@ -454,7 +455,7 @@ export async function addItemToLoadout(
 ) {
   const doc = await getWorkspaceDoc(workspaceKey);
   const loadoutsMap = doc.getMap("loadouts") as Y.Map<any>;
-  const loadout = loadoutsMap.get(loadoutId) as Y.Map<any>;
+  const loadout = loadoutsMap.getMap(loadoutId) as Y.Map<any>;
   if (!loadout) throw new Error("Loadout not found");
 
   // Remove item from any other loadouts first
@@ -479,7 +480,7 @@ export async function removeItemFromLoadout(
 ) {
   const doc = await getWorkspaceDoc(workspaceKey);
   const loadoutsMap = doc.getMap("loadouts") as Y.Map<any>;
-  const loadout = loadoutsMap.get(loadoutId) as Y.Map<any>;
+  const loadout = loadoutsMap.getMap(loadoutId) as Y.Map<any>;
   if (!loadout) throw new Error("Loadout not found");
 
   const contentsMap = loadout.get("contents") as Y.Map<any>;

@@ -436,11 +436,11 @@ export class ListBrowser extends LitElement {
     `;
   }
 
-  private addItemToContainer(itemId: string, itemName: string) {
+  private async addItemToContainer(itemId: string, itemName: string) {
     if (!this.workspaceKey || !this.containerId) return;
 
     try {
-      addItemToContents(this.workspaceKey, this.containerId, itemId);
+      await addItemToContents(this.workspaceKey, this.containerId, itemId);
       this.showToast(`✓ Added ${itemName}`, "success");
       // No need to reload since the item list doesn't change in add mode
     } catch (error) {
