@@ -646,10 +646,13 @@ function setupConnection(workspaceKey: string, conn: DataConnection) {
   // Listen for document updates and sync to this peer
   const updateHandler = (update: Uint8Array) => {
     try {
-      conn.send({
-        type: "sync",
-        data: update,
-      });
+      if (conn.open) {
+        console.log(`[${workspaceKey}] Sending update to peer ${conn.peer}, size: ${update.length}`);
+        conn.send({
+          type: "sync",
+          data: update,
+        });
+      }
     } catch (error) {
       console.error("Failed to send sync message:", error);
     }
@@ -657,29 +660,57 @@ function setupConnection(workspaceKey: string, conn: DataConnection) {
 
   // Handle incoming messages
   conn.on("data", (msg: any) => {
-    if (msg.type === "sync" && msg.data instanceof ArrayBuffer) {
+    console.log(`[${workspaceKey}] Received message type: ${msg.type} from peer ${conn.peer}, data type: ${msg.data?.constructor?.name}`);
+
+    if (msg.type === "syncReady") {
       try {
         if (yDoc) {
-          Y.applyUpdate(yDoc, new Uint8Array(msg.data));
+          console.log(`[${workspaceKey}] Peer is ready, sending our full state`);
+          const stateVector = Y.encodeStateVector(yDoc);
+          console.log(`[${workspaceKey}] Sending state vector to peer ${conn.peer}, size: ${stateVector.length}`);
+          conn.send({
+            type: "stateVector",
+            data: stateVector,
+          });
+        }
+      } catch (error) {
+        console.error("Failed to send state on syncReady:", error);
+      }
+    }
+
+    if (msg.type === "sync" && msg.data) {
+      try {
+        if (yDoc) {
+          const data = msg.data instanceof Uint8Array ? msg.data : new Uint8Array(msg.data);
+          console.log(`[${workspaceKey}] Applying sync update from peer, size: ${data.length}`);
+          Y.logUpdate(data);
+          Y.applyUpdate(yDoc, data, conn.peer);
+          console.log(`[${workspaceKey}] Sync update applied successfully`);
         }
       } catch (error) {
         console.error("Failed to apply sync update:", error);
       }
     }
 
-    if (msg.type === "stateVector") {
-      const stateVector = new Uint8Array(msg.data);
-      if (yDoc) {
-        const state = Y.encodeStateAsUpdate(yDoc, stateVector);
-        conn.send({
-          type: "sync",
-          data: state,
-        });
+    if (msg.type === "stateVector" && msg.data) {
+      try {
+        const stateVector = msg.data instanceof Uint8Array ? msg.data : new Uint8Array(msg.data);
+        if (yDoc) {
+          console.log(`[${workspaceKey}] Received stateVector from peer, encoding response`);
+          const state = Y.encodeStateAsUpdate(yDoc, stateVector);
+          console.log(`[${workspaceKey}] Sending state response, size: ${state.length}`);
+          conn.send({
+            type: "sync",
+            data: state,
+          });
+        }
+      } catch (error) {
+        console.error("Failed to handle stateVector:", error);
       }
     }
   });
 
-  // On connection, send full state and subscribe to updates
+  // On connection, exchange initial state and subscribe to updates
   conn.on("open", () => {
     try {
       if (!yDoc) {
@@ -687,17 +718,19 @@ function setupConnection(workspaceKey: string, conn: DataConnection) {
         return;
       }
 
+      console.log(`[${workspaceKey}] Connection opened with peer ${conn.peer}, subscribing to updates`);
+
       // Subscribe to future updates
       yDoc.on("update", updateHandler);
 
-      if (yDoc) {
-        conn.send({
-          type: "stateVector",
-          data: Y.encodeStateVector(yDoc),
-        });
-      }
+      // Send a signal that we're ready to sync
+      conn.send({
+        type: "syncReady",
+      });
+
       synced = true;
       webrtcRetryStateByWorkspace.set(workspaceKey, { lastRetryCount: 0 });
+      console.log(`[${workspaceKey}] Connection ready with peer ${conn.peer}`);
     } catch (error) {
       console.error("Failed to sync initial state:", error);
     }
@@ -705,7 +738,7 @@ function setupConnection(workspaceKey: string, conn: DataConnection) {
 
   conn.on("close", () => {
     // Unsubscribe from updates
-    if (synced) {
+    if (synced && yDoc) {
       yDoc.off("update", updateHandler);
     }
 

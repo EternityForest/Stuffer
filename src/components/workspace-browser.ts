@@ -114,6 +114,18 @@ export class WorkspaceBrowser extends LitElement {
   connectedCallback() {
     super.connectedCallback();
     this.loadItems();
+    // Listen for Yjs updates
+    import('../services/storage.js').then(({ getYDoc }) => {
+      try {
+        const yDoc = getYDoc();
+        yDoc.on('update', () => {
+          this.loadItems();
+          this.requestUpdate();
+        });
+      } catch (error) {
+        console.error('Failed to subscribe to Yjs updates:', error);
+      }
+    });
   }
 
   disconnectedCallback() {

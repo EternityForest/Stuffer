@@ -229,6 +229,18 @@ export class ObjectInspect extends LitElement {
   connectedCallback() {
     super.connectedCallback();
     this.loadItem();
+    // Listen for Yjs updates
+    import('../services/storage.js').then(({ getYDoc }) => {
+      try {
+        const yDoc = getYDoc();
+        yDoc.on('update', () => {
+          this.loadItem();
+          this.requestUpdate();
+        });
+      } catch (error) {
+        console.error('Failed to subscribe to Yjs updates:', error);
+      }
+    });
   }
 
   updated(changedProperties: Map<string, any>) {
