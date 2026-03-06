@@ -87,27 +87,29 @@ export class WorkspaceSelector extends LitElement {
 
         <h2>Create New Workspace</h2>
         <form @submit=${(e: Event) => { e.preventDefault(); this.handleCreate(); }}>
-          <input
+        <div class="tool-bar">  
+        <input
             type="text"
             placeholder="Workspace Name"
             .value=${this.workspaceName}
             @input=${(e: Event) => { this.workspaceName = (e.target as HTMLInputElement).value; }}
           />
           <button type="submit">Create Workspace</button>
+          </div>
         </form>
 
         <h2>Existing Workspaces</h2>
         <div class="workspaces-list">
           ${this.workspaces.length > 0 ? html`
             ${this.workspaces.map(workspace => html`
-              <div class="workspace-item">
-                <div>
+              <div class="card w-sm-full h-6rem">
+                <header>
                   <div class="workspace-name">${workspace.name}</div>
-                  <div class="workspace-key">${workspace.key}</div>
-                </div>
-                <div class="workspace-actions">
-                  <button class="load-btn" @click=${() => this.handleLoad(workspace.key)}>Load</button>
-                  <button class="delete-btn" @click=${() => this.handleDelete(workspace.key)}>Delete</button>
+                </header>
+                
+                <div class="tool-bar">
+                  <button class="highlight" @click=${() => this.handleLoad(workspace.key)}>Load</button>
+                  <button class="danger" @click=${() => this.handleDelete(workspace.key)}>Delete</button>
                 </div>
               </div>
             `)}

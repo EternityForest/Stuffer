@@ -1,6 +1,6 @@
 import { LitElement, html, css } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
-import { getItems, getWorkspaceDoc } from "../services/storage.js";
+import { getItems, getWorkspaceDoc, getWorkspacesMap } from "../services/storage.js";
 
 @customElement("workspace-browser")
 export class WorkspaceBrowser extends LitElement {
@@ -8,88 +8,6 @@ export class WorkspaceBrowser extends LitElement {
     return this;
   }
 
-  static styles = css`
-    :host {
-      display: flex;
-      flex-direction: column;
-      height: 100%;
-    }
-
-    .header {
-      padding: 1rem;
-      border-bottom: 1px solid #ddd;
-      display: flex;
-      gap: 1rem;
-      align-items: center;
-    }
-
-    .search-bar {
-      flex: 1;
-      padding: 0.5rem;
-      border: 1px solid #ccc;
-      border-radius: 4px;
-    }
-
-    button {
-      padding: 0.5rem 1rem;
-      background-color: #007bff;
-      color: white;
-      border: none;
-      border-radius: 4px;
-      cursor: pointer;
-    }
-
-    button:hover {
-      background-color: #0056b3;
-    }
-
-    .objects-grid {
-      flex: 1;
-      overflow-y: auto;
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-      gap: 1rem;
-      padding: 1rem;
-    }
-
-    .object-card {
-      border: 1px solid #ddd;
-      border-radius: 8px;
-      padding: 1rem;
-      cursor: pointer;
-      transition: box-shadow 0.2s;
-    }
-
-    .object-card:hover {
-      box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
-    }
-
-    .object-card h3 {
-      margin-top: 0;
-      margin-bottom: 0.5rem;
-    }
-
-    .object-card .meta {
-      font-size: 0.85rem;
-      color: #666;
-    }
-
-    .loadout-status {
-      font-size: 0.8rem;
-      margin-top: 0.5rem;
-      padding: 0.25rem 0.5rem;
-      border-radius: 3px;
-      background-color: #e7f3ff;
-      color: #004085;
-    }
-
-    .loadout-warning {
-      font-size: 0.8rem;
-      margin-top: 0.25rem;
-      color: #856404;
-      font-weight: bold;
-    }
-  `;
 
   @property()
   declare workspaceName: string;
@@ -155,6 +73,8 @@ export class WorkspaceBrowser extends LitElement {
 
     try {
       this.objects = await getItems(this.workspaceKey);
+
+      this.workspaceName = (await getWorkspacesMap()).get(this.workspaceKey)?.name
     } catch (error) {
       console.error("Failed to load items:", error);
       this.objects = [];
@@ -171,9 +91,11 @@ export class WorkspaceBrowser extends LitElement {
     const filteredObjects = this.objects.filter((obj) =>
       obj.name.toLowerCase().includes(this.searchQuery.toLowerCase())
     );
+    
 
     return html`
-      <div class="header">
+      <div class="tool-bar">
+      <p>Stuffer: ${this.workspaceName}</p>
         <input
           type="text"
           class="search-bar"
@@ -190,10 +112,10 @@ export class WorkspaceBrowser extends LitElement {
           Back
         </button>
       </div>
-      <div class="objects-grid">
+      <div class="flex-row gaps padding">
         ${filteredObjects.map(
           (obj) => html`
-            <div class="object-card" @click=${() => this.selectObject(obj.id)}>
+            <div class="card w-sm-half" @click=${() => this.selectObject(obj.id)}>
               <h3>${obj.name}</h3>
               <div class="meta">
                 <div>${new Date(obj.createdAt).toLocaleDateString()}</div>

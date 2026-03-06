@@ -79,22 +79,22 @@ export class LoadoutsManager extends LitElement {
 
   render() {
     return html`
-      <div class="header">
+      <div class="tool-bar">
         <h2>Loadouts</h2>
         <button @click=${() => this.createNewLoadout()}>Create Loadout</button>
         <button @click=${() => this.goBack()}>Back</button>
       </div>
-      <div class="loadouts-grid">
+      <div class="flex-row gaps padding">
         ${this.loadouts.length > 0 ? this.loadouts.map(loadout => html`
-          <div class="loadout-card">
+          <div class="card">
             <h3>${loadout.title}</h3>
             ${loadout.description ? html`
               <div class="description">${loadout.description}</div>
             ` : ''}
-            <div class="meta">${loadout.itemCount} item${loadout.itemCount !== 1 ? 's' : ''}</div>
-            <div class="card-actions">
+            <div class="badge">${loadout.itemCount} item${loadout.itemCount !== 1 ? 's' : ''}</div>
+            <div class="tool-bar">
               <button class="edit-btn" @click=${() => this.editLoadout(loadout.id)}>Edit</button>
-              <button class="delete-btn" @click=${() => this.deleteLoadout(loadout.id)}>Delete</button>
+              <button class="danger" @click=${() => this.deleteLoadout(loadout.id)}>Delete</button>
             </div>
           </div>
         `) : html`

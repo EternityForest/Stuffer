@@ -1,10 +1,20 @@
-import { LitElement, html, css } from 'lit';
-import { customElement, property, state } from 'lit/decorators.js';
-import { getWorkspace, getWebRTCStatus, updateWorkspaceSyncPeerId, enableWebRTC, disconnectWebRTC, updateWorkspaceLocalPeerId, exportWorkspaceState, importWorkspaceState, downloadWorkspaceFile } from '../services/storage.js';
-import { getWorkspaceLocalSettings } from '../services/local-settings.js';
-import { generateUUID } from '../utils/uuid.js';
+import { LitElement, html, css } from "lit";
+import { customElement, property, state } from "lit/decorators.js";
+import {
+  getWorkspace,
+  getWebRTCStatus,
+  updateWorkspaceSyncPeerId,
+  enableWebRTC,
+  disconnectWebRTC,
+  updateWorkspaceLocalPeerId,
+  exportWorkspaceState,
+  importWorkspaceState,
+  downloadWorkspaceFile,
+} from "../services/storage.js";
+import { getWorkspaceLocalSettings } from "../services/local-settings.js";
+import { generateUUID } from "../utils/uuid.js";
 
-@customElement('workspace-settings')
+@customElement("workspace-settings")
 export class WorkspaceSettings extends LitElement {
   override createRenderRoot() {
     return this;
@@ -35,7 +45,7 @@ export class WorkspaceSettings extends LitElement {
   declare peerCount: number;
 
   @state()
-  declare status: 'connected' | 'disconnected' | 'connecting';
+  declare status: "connected" | "disconnected" | "connecting";
 
   @state()
   declare signalingServer: string;
@@ -51,16 +61,16 @@ export class WorkspaceSettings extends LitElement {
 
   constructor() {
     super();
-    this.workspaceKey = '';
-    this.workspaceName = '';
-    this.syncToPeer = '';
-    this.localPeerId = '';
+    this.workspaceKey = "";
+    this.workspaceName = "";
+    this.syncToPeer = "";
+    this.localPeerId = "";
     this.editingsyncToPeer = false;
-    this.newsyncToPeer = '';
+    this.newsyncToPeer = "";
     this.connected = false;
     this.peerCount = 0;
-    this.status = 'disconnected';
-    this.signalingServer = 'wss://y-webrtc-ckynwnzncc.now.sh';
+    this.status = "disconnected";
+    this.signalingServer = "wss://y-webrtc-ckynwnzncc.now.sh";
     this.error = null;
     this.importSuccess = null;
   }
@@ -84,15 +94,17 @@ export class WorkspaceSettings extends LitElement {
     try {
       const workspace = await getWorkspace(this.workspaceKey);
       if (workspace) {
-        this.workspaceName = (workspace as any).get('name') as string;
+        this.workspaceName = (workspace as any).get("name") as string;
         // Get sync key from local settings, not from synced workspace
-        this.syncToPeer = getWorkspaceLocalSettings(this.workspaceKey).syncPeerId || '';
-        this.localPeerId = getWorkspaceLocalSettings(this.workspaceKey).localPeerId || '';
+        this.syncToPeer =
+          getWorkspaceLocalSettings(this.workspaceKey).syncPeerId || "";
+        this.localPeerId =
+          getWorkspaceLocalSettings(this.workspaceKey).localPeerId || "";
         this.newsyncToPeer = this.syncToPeer;
       }
     } catch (error) {
-      console.error('Failed to load workspace data:', error);
-      this.error = 'Failed to load workspace data';
+      console.error("Failed to load workspace data:", error);
+      this.error = "Failed to load workspace data";
     }
   }
 
@@ -110,35 +122,34 @@ export class WorkspaceSettings extends LitElement {
       const status = getWebRTCStatus(this.workspaceKey);
       this.connected = status.connected;
       this.peerCount = status.peers;
-      this.status = status.connected ? 'connected' : 'disconnected';
+      this.status = status.connected ? "connected" : "disconnected";
       this.signalingServer = status.signalingServer;
     } catch (error) {
-      console.error('Failed to update WebRTC status:', error);
+      console.error("Failed to update WebRTC status:", error);
     }
   }
 
-
   private async startRegenLocalKey() {
-    if(confirm('Are you sure you want to regenerate the local sync key?')) {
+    if (confirm("Are you sure you want to regenerate the local sync key?")) {
       try {
         const uuid = generateUUID();
         await updateWorkspaceLocalPeerId(this.workspaceKey, uuid);
         await this.loadWorkspaceData();
       } catch (error) {
-        console.error('Failed to regenerate local sync key:', error);
-        this.error = 'Failed to regenerate local sync key';
+        console.error("Failed to regenerate local sync key:", error);
+        this.error = "Failed to regenerate local sync key";
       }
     }
   }
 
   private async startClearLocalKey() {
-    if(confirm('Are you sure you want to clear the local sync key?')) {
+    if (confirm("Are you sure you want to clear the local sync key?")) {
       try {
-        await updateWorkspaceLocalPeerId(this.workspaceKey, '');
+        await updateWorkspaceLocalPeerId(this.workspaceKey, "");
         await this.loadWorkspaceData();
       } catch (error) {
-        console.error('Failed to clear local sync key:', error);
-        this.error = 'Failed to clear local sync key';
+        console.error("Failed to clear local sync key:", error);
+        this.error = "Failed to clear local sync key";
       }
     }
   }
@@ -165,8 +176,8 @@ export class WorkspaceSettings extends LitElement {
       this.editingsyncToPeer = false;
       this.error = null;
     } catch (error) {
-      console.error('Failed to update sync key:', error);
-      this.error = 'Failed to update sync key';
+      console.error("Failed to update sync key:", error);
+      this.error = "Failed to update sync key";
     }
   }
 
@@ -177,16 +188,16 @@ export class WorkspaceSettings extends LitElement {
       disconnectWebRTC(this.workspaceKey);
       this.updateStatus();
     } catch (error) {
-      console.error('Failed to disconnect WebRTC:', error);
-      this.error = 'Failed to disconnect';
+      console.error("Failed to disconnect WebRTC:", error);
+      this.error = "Failed to disconnect";
     }
   }
 
   private async reconnect() {
     if (!this.workspaceKey) return;
 
-    if (!this.localPeerId || this.localPeerId.trim() === '') {
-      this.error = 'Cannot reconnect: Local peer ID is empty';
+    if (!this.localPeerId || this.localPeerId.trim() === "") {
+      this.error = "Cannot reconnect: Local peer ID is empty";
       return;
     }
 
@@ -194,33 +205,39 @@ export class WorkspaceSettings extends LitElement {
       await enableWebRTC(this.workspaceKey);
       setTimeout(() => this.updateStatus(), 500);
     } catch (error) {
-      console.error('Failed to reconnect WebRTC:', error);
-      this.error = 'Failed to reconnect';
+      console.error("Failed to reconnect WebRTC:", error);
+      this.error = "Failed to reconnect";
     }
   }
 
   private goBack() {
-    this.dispatchEvent(new CustomEvent('navigate', {
-      detail: { screen: 'workspace-browser' },
-      bubbles: true,
-      composed: true,
-    }));
+    this.dispatchEvent(
+      new CustomEvent("navigate", {
+        detail: { screen: "workspace-browser" },
+        bubbles: true,
+        composed: true,
+      })
+    );
   }
 
   private async handleExport() {
     if (!this.workspaceKey) {
-      this.error = 'Workspace key not available';
+      this.error = "Workspace key not available";
       return;
     }
 
     try {
       const state = await exportWorkspaceState(this.workspaceKey);
       downloadWorkspaceFile(this.workspaceKey, state);
-      this.importSuccess = 'Workspace exported successfully';
-      setTimeout(() => { this.importSuccess = null; }, 3000);
+      this.importSuccess = "Workspace exported successfully";
+      setTimeout(() => {
+        this.importSuccess = null;
+      }, 3000);
     } catch (error) {
-      console.error('Failed to export workspace:', error);
-      this.error = `Export failed: ${error instanceof Error ? error.message : String(error)}`;
+      console.error("Failed to export workspace:", error);
+      this.error = `Export failed: ${
+        error instanceof Error ? error.message : String(error)
+      }`;
     }
   }
 
@@ -231,7 +248,7 @@ export class WorkspaceSettings extends LitElement {
     if (!file) return;
 
     if (!this.workspaceKey) {
-      this.error = 'Workspace key not available';
+      this.error = "Workspace key not available";
       return;
     }
 
@@ -241,29 +258,36 @@ export class WorkspaceSettings extends LitElement {
         const arrayBuffer = event.target?.result as ArrayBuffer;
         const uint8Array = new Uint8Array(arrayBuffer);
         await importWorkspaceState(this.workspaceKey, uint8Array);
-        this.importSuccess = 'Workspace imported and merged successfully';
-        setTimeout(() => { this.importSuccess = null; }, 3000);
+        this.importSuccess = "Workspace imported and merged successfully";
+        setTimeout(() => {
+          this.importSuccess = null;
+        }, 3000);
         // Reset file input
-        input.value = '';
+        input.value = "";
       } catch (error) {
-        console.error('Failed to import workspace:', error);
-        this.error = `Import failed: ${error instanceof Error ? error.message : String(error)}`;
-        input.value = '';
+        console.error("Failed to import workspace:", error);
+        this.error = `Import failed: ${
+          error instanceof Error ? error.message : String(error)
+        }`;
+        input.value = "";
       }
     };
 
     reader.onerror = () => {
-      this.error = 'Failed to read file';
-      input.value = '';
+      this.error = "Failed to read file";
+      input.value = "";
     };
 
     reader.readAsArrayBuffer(file);
   }
 
   render() {
-    const statusText = this.status === 'connected' ? 'Connected' :
-                       this.status === 'connecting' ? 'Connecting' :
-                       'Disconnected';
+    const statusText =
+      this.status === "connected"
+        ? "Connected"
+        : this.status === "connecting"
+        ? "Connecting"
+        : "Disconnected";
 
     return html`
       <div class="header">
@@ -272,50 +296,98 @@ export class WorkspaceSettings extends LitElement {
       </div>
 
       <div class="content">
-        ${this.error ? html`
-          <div class="warning">${this.error}</div>
-        ` : ''}
+        ${this.error ? html` <div class="warning">${this.error}</div> ` : ""}
 
         <div class="section">
           <h3>Workspace Information</h3>
           <div class="form-group">
             <label>Workspace Name</label>
-            <input type="text" class="readonly" .value=${this.workspaceName} readonly />
+            <input
+              type="text"
+              class="readonly"
+              .value=${this.workspaceName}
+              readonly
+            />
           </div>
         </div>
 
         <div class="section">
           <h3>Sync Configuration</h3>
-          ${this.editingsyncToPeer ? html`
-            <div class="form-group">
-              <label>Sync to Peer</label>
-              <input
-                type="text"
-                .value=${this.newsyncToPeer}
-                @input=${(e: Event) => { this.newsyncToPeer = (e.target as HTMLInputElement).value; }}
-                placeholder="Enter new sync key"
-              />
-              <div class="info">
-                Changing the sync key will disconnect from current peers and connect to a new room.
-              </div>
-              <div class="button-group">
-                <button @click=${() => this.updateSyncRemoteKey()}>Save Key</button>
-                <button class="danger" @click=${() => this.cancelEditsyncToPeer()}>Cancel</button>
-              </div>
-            </div>
-          ` : html`
-            <div class="form-group">
-              <label>Sync To Peer</label>
-              <input type="text" class="readonly" .value=${this.syncToPeer} readonly />
-              <button @click=${() => this.startEditsyncToPeer()} style="margin-top: 0.5rem; width: 100%;">Edit Sync Key</button>
-            </div>
-          `}
+          ${this.editingsyncToPeer
+            ? html`
+                <div class="stacked-form">
+                  <label
+                    >Sync to Peer
+                    <input
+                      type="text"
+                      .value=${this.newsyncToPeer}
+                      @input=${(e: Event) => {
+                        this.newsyncToPeer = (
+                          e.target as HTMLInputElement
+                        ).value;
+                      }}
+                      placeholder="Enter new sync key"
+                  /></label>
+                  <div class="info">
+                    Changing the sync key will disconnect from current peers and
+                    connect to a new room.
+                  </div>
+                  <div class="tool-bar">
+                    <button @click=${() => this.updateSyncRemoteKey()}>
+                      Save Key
+                    </button>
+                    <button
+                      class="danger"
+                      @click=${() => this.cancelEditsyncToPeer()}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              `
+            : html`
+                <div class="form-group">
+                  <label
+                    >Sync To Peer
+                    <input
+                      type="text"
+                      class="readonly"
+                      .value=${this.syncToPeer}
+                      readonly
+                  /></label>
+                  <button
+                    @click=${() => this.startEditsyncToPeer()}
+                    style="margin-top: 0.5rem; width: 100%;"
+                  >
+                    Edit Sync Key
+                  </button>
+                </div>
+              `}
 
           <div class="form-group">
-              <label>Local Peer ID</label>
-              <input type="text" class="readonly" .value=${this.localPeerId} readonly />
-              <button @click=${() => this.startRegenLocalKey()} style="margin-top: 0.5rem; width: 100%;">Regenerate Local Peer ID</button>
-              <button @click=${() => this.startClearLocalKey()} style="margin-top: 0.5rem; width: 100%;">Clear local ID/Disable Sync</button>  
+            <label
+              >Local Peer ID
+              <input
+                type="text"
+                class="readonly"
+                .value=${this.localPeerId}
+                readonly
+            /></label>
+
+            <div class="tool-bar">
+              <button
+                @click=${() => this.startRegenLocalKey()}
+                style="margin-top: 0.5rem; width: 100%;"
+              >
+                Regenerate Local Peer ID
+              </button>
+              <button
+                @click=${() => this.startClearLocalKey()}
+                style="margin-top: 0.5rem; width: 100%;"
+              >
+                Clear local ID/Disable Sync
+              </button>
+            </div>
           </div>
         </div>
 
@@ -335,31 +407,45 @@ export class WorkspaceSettings extends LitElement {
             </div>
             <div class="status-line">
               <span class="status-label">Signaling Server:</span>
-              <span class="status-value" style="font-family: monospace; font-size: 0.85rem;">${this.signalingServer}</span>
+              <span
+                class="status-value"
+                style="font-family: monospace; font-size: 0.85rem;"
+                >${this.signalingServer}</span
+              >
             </div>
           </div>
 
           <div class="button-group">
-            ${this.connected ? html`
-              <button class="danger" @click=${() => this.disconnect()}>Disconnect</button>
-            ` : html`
-              <button @click=${() => this.reconnect()}>Reconnect</button>
-            `}
+            ${this.connected
+              ? html`
+                  <button class="danger" @click=${() => this.disconnect()}>
+                    Disconnect
+                  </button>
+                `
+              : html`
+                  <button @click=${() => this.reconnect()}>Reconnect</button>
+                `}
           </div>
         </div>
 
         <div class="section">
           <h3>Backup & Restore</h3>
-          ${this.importSuccess ? html`
-            <div style="padding: 0.75rem; background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; border-radius: 4px; font-size: 0.9rem; margin-bottom: 1rem;">${this.importSuccess}</div>
-          ` : ''}
+          ${this.importSuccess
+            ? html`
+                <div
+                  style="padding: 0.75rem; background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; border-radius: 4px; font-size: 0.9rem; margin-bottom: 1rem;"
+                >
+                  ${this.importSuccess}
+                </div>
+              `
+            : ""}
 
           <div class="form-group">
             <label>Export Workspace</label>
-            <button @click=${() => this.handleExport()} style="width: 100%;">Download .invupd File</button>
-            <div class="info">
-              Export entire workspace state to file
-            </div>
+            <button @click=${() => this.handleExport()} style="width: 100%;">
+              Download .invupd File
+            </button>
+            <div class="info">Export entire workspace state to file</div>
           </div>
 
           <div class="form-group">
@@ -369,9 +455,7 @@ export class WorkspaceSettings extends LitElement {
               accept=".invupd"
               @change=${(e: Event) => this.handleImportFile(e)}
             />
-            <div class="warning">
-              Importing will merge with existing data
-            </div>
+            <div class="warning">Importing will merge with existing data</div>
           </div>
         </div>
       </div>
@@ -381,6 +465,6 @@ export class WorkspaceSettings extends LitElement {
 
 declare global {
   interface HTMLElementTagNameMap {
-    'workspace-settings': WorkspaceSettings;
+    "workspace-settings": WorkspaceSettings;
   }
 }

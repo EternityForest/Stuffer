@@ -9,6 +9,8 @@ import './components/list-browser.js';
 import './components/add-remove-item.js';
 import './components/loadouts-manager.js';
 import './components/workspace-settings.js';
+import './styles/barrel.css';
+
 
 @customElement('stuffer-app')
 class StufferApp extends LitElement {
@@ -18,6 +20,9 @@ class StufferApp extends LitElement {
     await initializeYDoc();
   }
 
+    override createRenderRoot() {
+    return this;
+  }
   render() {
     return html`
       <app-shell></app-shell>

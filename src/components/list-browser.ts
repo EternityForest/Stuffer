@@ -158,7 +158,7 @@ export class ListBrowser extends LitElement {
           `
         : ""}
 
-      <div class="header">
+      <div class="tool-bar">
         <h2>${title}</h2>
         ${this.mode === "add-to-contents" ||
         this.mode === "remove-from-contents" ||
@@ -172,10 +172,10 @@ export class ListBrowser extends LitElement {
           : ""}
         <button @click=${() => this.goBack()}>Back</button>
       </div>
-      <div class="list-container">
+      <div class="flex-row gaps padding">
         ${this.isScanning
           ? html`
-              <div class="scan-container">
+              <div class="scan-container w-100vw">
                 <video id="qr-video"></video>
                 <div class="scanning-indicator">Scanning...</div>
               </div>
@@ -190,11 +190,11 @@ export class ListBrowser extends LitElement {
                 ? html`
                     ${this.items.map(
                       (item) => html`
-                        <div class="list-item">
+                        <div class="card">
                           <div class="item-info">
                             <div class="item-name">${item.name}</div>
                           </div>
-                          <div class="item-actions">
+                          <div class="tool-bar">
                             ${this.mode === "add-to-contents" ||
                             this.mode === "create-loadout"
                               ? html`
@@ -226,7 +226,7 @@ export class ListBrowser extends LitElement {
                                 `
                               : html`
                                   <button
-                                    class="action-btn delete-btn"
+                                    class="action-btn danger"
                                     @click=${() =>
                                       this.mode === "remove-from-contents"
                                         ? this.removeItemFromContainer(item.id)
@@ -405,7 +405,7 @@ export class ListBrowser extends LitElement {
       this.requestUpdate();
 
       setTimeout(() => {
-        this.videoElement = this.shadowRoot?.querySelector(
+        this.videoElement = this.querySelector(
           "#qr-video"
         ) as HTMLVideoElement;
         if (this.videoElement) {
