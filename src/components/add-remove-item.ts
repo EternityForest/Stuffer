@@ -10,7 +10,7 @@ import jsQR from "jsqr";
 
 @customElement("add-remove-item")
 export class AddRemoveItem extends LitElement {
-  static createRenderRoot() {
+  override createRenderRoot() {
     return this;
   }
 

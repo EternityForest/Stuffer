@@ -5,22 +5,8 @@ type Screen = 'workspace-selector' | 'workspace-browser' | 'object-inspect' | 'l
 
 @customElement('app-shell')
 export class AppShell extends LitElement {
-  static styles = css`
-    :host {
-      display: block;
-      height: 100%;
-      width: 100%;
-    }
-
-    .container {
-      display: flex;
-      flex-direction: column;
-      height: 100%;
-      width: 100%;
-    }
-  `;
-
-  static createRenderRoot() {
+  
+  override createRenderRoot() {
     return this;
   }
 

@@ -12,13 +12,6 @@ import './components/workspace-settings.js';
 
 @customElement('stuffer-app')
 class StufferApp extends LitElement {
-  static styles = css`
-    :host {
-      display: block;
-      height: 100vh;
-      width: 100vw;
-    }
-  `;
 
   async connectedCallback() {
     super.connectedCallback();

@@ -4,7 +4,7 @@ import { getItems, getWorkspaceDoc } from "../services/storage.js";
 
 @customElement("workspace-browser")
 export class WorkspaceBrowser extends LitElement {
-  static createRenderRoot() {
+  override createRenderRoot() {
     return this;
   }
 
