@@ -12,6 +12,7 @@
     "colCount": 4,
     "stickerWidth": 38.1,
     "stickerHeight": 38.1,
+    "stickerMargin": 1.5,
     "horizontalGap": null,
     "verticalGap": null,
     "description": "1.5 Square Stickers"

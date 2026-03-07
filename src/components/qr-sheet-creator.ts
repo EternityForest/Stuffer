@@ -146,6 +146,7 @@ export class QRSheetCreator extends LitElement {
       justify-content: center;
       overflow: hidden;
       background: white;
+      border: 1px solid #ddd;
     }
 
     .sticker img {
@@ -161,21 +162,19 @@ export class QRSheetCreator extends LitElement {
     }
 
     @media print {
-      * {
+      body {
+        background: white;
         margin: 0;
         padding: 0;
       }
 
-      body {
-        background: white;
+      main{
+        margin: 0 !important;
+        padding: 0 !important;
       }
 
       .toolbar {
         display: none;
-      }
-
-      .print-container {
-        padding: 0;
       }
 
       .sheet {
@@ -185,6 +184,11 @@ export class QRSheetCreator extends LitElement {
 
       .sticker {
         border: none;
+      }
+
+      .print-container {
+        padding: 0;
+        margin: 0;
       }
     }
   `;
@@ -233,13 +237,18 @@ export class QRSheetCreator extends LitElement {
             style="
               grid-template-columns: repeat(${this.layout.colCount}, ${stickerWidthMm});
               grid-template-rows: repeat(${this.layout.rowCount}, ${stickerHeightMm});
-              gap: ${this.layout.horizontalGap}mm ${this.layout.verticalGap}mm;
+              gap: ${this.layout.verticalGap}mm ${this.layout.horizontalGap}mm;
             "
           >
             ${this.qrCodes.map(
               (qr) => html`
                 <div class="sticker">
-                  <img src="${qr.dataUrl}" alt="QR: ${qr.id}" title="${qr.id}" />
+                  <img
+                    src="${qr.dataUrl}"
+                    alt="QR: ${qr.id}"
+                    title="${qr.id}"
+                    style="padding: ${this.layout.stickerMargin || 0}mm;"
+                  />
                 </div>
               `
             )}

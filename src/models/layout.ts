@@ -11,6 +11,7 @@ export interface StickerLayout {
   colCount: number;
   stickerWidth: number; // in mm
   stickerHeight: number; // in mm
+  stickerMargin: number; // in mm
   horizontalGap: number | null; // in mm
   verticalGap: number | null; // in mm
   description: string;
