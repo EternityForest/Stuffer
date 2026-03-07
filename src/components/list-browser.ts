@@ -1,7 +1,7 @@
 import { LitElement, html, css } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import {
-  getItems,
+  getItemsOverview,
   getItemContents,
   addItemToContents,
   removeItemFromContents,
@@ -146,7 +146,7 @@ export class ListBrowser extends LitElement {
     try {
       if (this.selectingContainer) {
         // Load all items as containers
-        this.containerList = await getItems(this.workspaceKey);
+        this.containerList = await getItemsOverview(this.workspaceKey);
       } else if (this.mode === "remove-from-contents" && this.containerId) {
         // For remove mode, load items that are IN the container
         this.items = (
@@ -162,7 +162,7 @@ export class ListBrowser extends LitElement {
         this.items = loadout.contents;
       } else {
         // For add-to-contents and create-loadout modes, load all items in workspace
-        this.items = await getItems(this.workspaceKey);
+        this.items = await getItemsOverview(this.workspaceKey);
       }
     } catch (error) {
       console.error("Failed to load items:", error);

@@ -7,6 +7,7 @@ import {
   getWorkspaceLocalSettings,
 } from "./local-settings.js";
 import convert from "convert";
+import { set } from "lib0/encoding.js";
 
 interface WorkspaceMetadata {
   name: string;
@@ -177,7 +178,6 @@ export async function addItem(workspaceKey: string, itemName: string, uuid?: str
   const itemId = uuid || generateItemId();
 
   const item = new Y.Map();
-  item.set("name", itemName);
   item.set("createdAt", new Date().toISOString());
   item.set("title", itemName);
   item.set("description", "");
@@ -188,22 +188,25 @@ export async function addItem(workspaceKey: string, itemName: string, uuid?: str
   return itemId;
 }
 
-export async function getItems(workspaceKey: string) {
+export async function getItemsOverview(workspaceKey: string) {
   const doc = await getWorkspaceDoc(workspaceKey);
   const objectsMap = doc.getMap("objects") as Y.Map<any>;
   const items: Array<{
     id: string;
     name: string;
     createdAt: string;
+    inContainer?: string;
   }> = [];
 
-  objectsMap.forEach((item, id) => {
+
+  for(const [id, item] of objectsMap) {
     items.push({
       id,
-      name: item.get("name") as string,
+      name: item.get("title") as string,
       createdAt: item.get("createdAt") as string,
+      inContainer: item.get("inContainer") && await lookupItemName(workspaceKey, item.get("inContainer")) as string,
     });
-  });
+  }
 
   return items;
 }
@@ -215,7 +218,8 @@ export async function findItemById(workspaceKey: string, ulid: string) {
 }
 
 export async function lookupItemName(workspaceKey: string, itemId: string) {
-  try {
+  try 
+  {
     const item = await getItem(workspaceKey, itemId);
     return item.title;
   } catch (e) {
@@ -226,7 +230,13 @@ export async function lookupItemName(workspaceKey: string, itemId: string) {
 export async function deleteItem(workspaceKey: string, itemId: string) {
   const doc = await getWorkspaceDoc(workspaceKey);
   const objectsMap = doc.getMap("objects") as Y.Map<any>;
-  objectsMap.delete(itemId);
+  const contents = await getItemContents(workspaceKey, itemId);
+
+  for (const content of contents) {
+    await updateItemProperty(workspaceKey, content.id, "inContainer", null);
+  }
+
+  objectsMap.delete(itemId)
 }
 
 export async function getItem(workspaceKey: string, itemId: string) {
@@ -237,12 +247,15 @@ export async function getItem(workspaceKey: string, itemId: string) {
 
   return {
     id: itemId,
-    name: item.get("name") as string,
+    name: item.get("title") as string,
     title: item.get("title") as string,
     description: item.get("description") as string,
     createdAt: item.get("createdAt") as string,
     imageData: item.get("imageData") as string | undefined,
     selectedLoadout: item.get("selectedLoadout") as string | null,
+    inContainer: item.get("inContainer")|| '' as string,
+    lastScannedTimestamp: item.get("lastScannedTimestamp") as string | null,
+    lastScannedLocation: item.get("lastScannedLocation") as string | null,
   };
 }
 
@@ -321,6 +334,7 @@ export async function addItemToContents(
   content.set("itemId", itemId);
 
   contentsMap.set(itemId, content);
+  updateItemProperty(workspaceKey, itemId, "inContainer", containerId);
 }
 
 export async function removeItemFromContents(
@@ -335,6 +349,8 @@ export async function removeItemFromContents(
 
   const contentsMap = container.get("contents") as Y.Map<any>;
   contentsMap.delete(contentItemId);
+
+  updateItemProperty(workspaceKey, contentItemId, "inContainer", null);
 }
 
 export async function createLoadout(
@@ -1154,10 +1170,9 @@ export async function updateLastScanned(
       return;
     }
   }
-  item.set("lastScannedAt", new Date().toISOString());
+  item.set("lastScannedTimestamp", new Date().toISOString());
   if (latitude !== undefined && longitude !== undefined) {
-    item.set("lastScannedLatitude", latitude);
-    item.set("lastScannedLongitude", longitude);
+    item.set("lastScannedLocation", "" + latitude + "," + longitude);
   }
 }
 

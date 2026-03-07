@@ -14,6 +14,7 @@ import {
   deleteAmountUpdate,
   calculateCurrentAmount,
   getWorkspaceDoc,
+  lookupItemName,
 } from "../services/storage.js";
 import { compressImage } from "../services/imageCompression.js";
 
@@ -63,6 +64,15 @@ export class ObjectInspect extends LitElement {
   declare extraItems: Array<{ id: string; name: string; quantity: number }>;
 
   @state()
+  declare lastScannedLocation: string | null;
+
+  @state()
+  declare lastScannedTimestamp: string | null;
+
+  @state()
+  declare inContainer: string | null;
+
+  @state()
   declare amountUpdates: Array<{
     id: string;
     type: "set" | "delta";
@@ -100,6 +110,9 @@ export class ObjectInspect extends LitElement {
     this.amountUpdates = [];
     this.currentAmount = null;
     this.editingAmountUpdateId = null;
+    this.lastScannedLocation = null;
+    this.lastScannedTimestamp = null;
+    this.inContainer = null;
   }
 
   connectedCallback() {
@@ -159,6 +172,9 @@ export class ObjectInspect extends LitElement {
     try {
       const item = await getItem(this.workspaceKey, this.objectId);
       this.title = item.title;
+      this.lastScannedTimestamp = item.lastScannedTimestamp;
+      this.lastScannedLocation = item.lastScannedLocation;
+      this.inContainer = item.inContainer;
       this.description = item.description;
       this.imageData = (item as any).imageData || null;
       this.selectedLoadout = item.selectedLoadout || null;
@@ -545,6 +561,25 @@ export class ObjectInspect extends LitElement {
               Recheck Inventory
             </button>
           </div>
+
+
+          <h3>Location</h3>
+          <p>${this.inContainer ? "In Container " + lookupItemName(this.workspaceKey,this.inContainer) : ""}</p>
+          
+          ${
+            this.lastScannedLocation
+              ? html`
+                  <div class="location-display">
+                    <a href="geo:${this.lastScannedLocation}" target="_blank">
+                      ${this.lastScannedLocation} at
+                      ${new Date(
+                        this.lastScannedTimestamp || 0
+                      ).toLocaleString()}
+                    </a>
+                  </div>
+                `
+              : ""
+          }
 
           <h3>Contents</h3>
           ${

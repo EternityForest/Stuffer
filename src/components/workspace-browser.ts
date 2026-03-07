@@ -1,6 +1,6 @@
-import { LitElement, html, css } from "lit";
+import { LitElement, html } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
-import { getItems, getWorkspaceDoc, getWorkspacesMap } from "../services/storage.js";
+import { getItemsOverview, getWorkspaceDoc, getWorkspacesMap, lookupItemName } from "../services/storage.js";
 
 @customElement("workspace-browser")
 export class WorkspaceBrowser extends LitElement {
@@ -19,7 +19,9 @@ export class WorkspaceBrowser extends LitElement {
   declare searchQuery: string;
 
   @state()
-  declare objects: Array<{ id: string; name: string; createdAt: string }>;
+  declare objects: Array<{ id: string; name: string; createdAt: string,
+    inContainer?: string
+   }>;
 
   private updateListener: ((update: Uint8Array, origin: any) => void) | null =
     null;
@@ -72,7 +74,7 @@ export class WorkspaceBrowser extends LitElement {
     if (!this.workspaceKey) return;
 
     try {
-      this.objects = await getItems(this.workspaceKey);
+      this.objects = await getItemsOverview(this.workspaceKey);
 
       this.workspaceName = (await getWorkspacesMap()).get(this.workspaceKey)?.name
     } catch (error) {
@@ -119,6 +121,10 @@ export class WorkspaceBrowser extends LitElement {
             <div class="card w-sm-half" @click=${() => this.selectObject(obj.id)}>
               <h3>${obj.name}</h3>
               <div class="meta">
+              ${obj.inContainer ? html`<div class="in-container">
+              At ${obj.inContainer}
+              
+              </div>` : ""}
                 <div>${new Date(obj.createdAt).toLocaleDateString()}</div>
               </div>
             </div>
