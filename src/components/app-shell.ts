@@ -1,6 +1,23 @@
 import { LitElement, html, css } from "lit";
 import { customElement, state } from "lit/decorators.js";
 
+const appStyles = css`
+  .app-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 20px;
+    background: #f5f5f5;
+    border-bottom: 1px solid #ddd;
+    gap: 20px;
+  }
+
+
+  .container {
+    padding: 20px;
+  }
+`;
+
 type Screen =
   | "workspace-selector"
   | "workspace-browser"
@@ -17,6 +34,8 @@ export class AppShell extends LitElement {
   override createRenderRoot() {
     return this;
   }
+
+  static styles = appStyles;
 
   @state()
   declare currentScreen: Screen;
@@ -58,7 +77,9 @@ export class AppShell extends LitElement {
   }
 
   render() {
-    return html` <div class="container">${this.renderScreen()}</div> `;
+    return html`
+      <div class="container">${this.renderScreen()}</div>
+    `;
   }
 
   private renderScreen() {
