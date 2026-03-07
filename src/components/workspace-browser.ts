@@ -106,6 +106,7 @@ export class WorkspaceBrowser extends LitElement {
           }}
         />
         <button @click=${() => this.addItem()}>Add Item</button>
+        <button @click=${() => this.navigateToQRSheets()}>QR Sheets</button>
         <button @click=${() => this.navigateToLoadouts()}>Loadouts</button>
         <button @click=${() => this.navigateToSettings()}>Settings</button>
         <button @click=${() => this.dispatchNavigate("workspace-selector")}>
@@ -180,6 +181,19 @@ export class WorkspaceBrowser extends LitElement {
         detail: {
           screen: "workspace-settings",
           context: { workspaceKey: this.workspaceKey },
+        },
+        bubbles: true,
+        composed: true,
+      })
+    );
+  }
+
+  private navigateToQRSheets() {
+    this.dispatchEvent(
+      new CustomEvent("navigate", {
+        detail: {
+          screen: "layout-browser",
+          context: {},
         },
         bubbles: true,
         composed: true,

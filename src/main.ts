@@ -9,6 +9,9 @@ import './components/list-browser.js';
 import './components/add-remove-item.js';
 import './components/loadouts-manager.js';
 import './components/workspace-settings.js';
+import './components/layout-browser.js';
+import './components/qr-sheet-creator.js';
+
 import './styles/barrel.css';
 
 

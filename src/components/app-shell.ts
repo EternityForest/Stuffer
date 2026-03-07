@@ -1,11 +1,19 @@
-import { LitElement, html, css } from 'lit';
-import { customElement, state } from 'lit/decorators.js';
+import { LitElement, html, css } from "lit";
+import { customElement, state } from "lit/decorators.js";
 
-type Screen = 'workspace-selector' | 'workspace-browser' | 'object-inspect' | 'list-browser' | 'add-remove-item' | 'loadouts-manager' | 'workspace-settings';
+type Screen =
+  | "workspace-selector"
+  | "workspace-browser"
+  | "object-inspect"
+  | "list-browser"
+  | "add-remove-item"
+  | "loadouts-manager"
+  | "workspace-settings"
+  | "layout-browser"
+  | "qr-sheet-creator";
 
-@customElement('app-shell')
+@customElement("app-shell")
 export class AppShell extends LitElement {
-  
   override createRenderRoot() {
     return this;
   }
@@ -24,13 +32,24 @@ export class AppShell extends LitElement {
 
   constructor() {
     super();
-    this.currentScreen = 'workspace-selector';
+    this.currentScreen = "workspace-selector";
     this.currentWorkspace = null;
     this.selectedObject = null;
     this.navigateContext = null;
   }
 
-  navigateTo(screen: Screen, context?: { workspace?: string; workspaceKey?: string; object?: string; containerId?: string; loadoutId?: string; mode?: string }) {
+  navigateTo(
+    screen: Screen,
+    context?: {
+      workspace?: string;
+      workspaceKey?: string;
+      object?: string;
+      containerId?: string;
+      loadoutId?: string;
+      mode?: string;
+      layout?: any;
+    }
+  ) {
     this.currentScreen = screen;
     if (context?.workspace) this.currentWorkspace = context.workspace;
     if (context?.workspaceKey) this.currentWorkspace = context.workspaceKey;
@@ -39,73 +58,95 @@ export class AppShell extends LitElement {
   }
 
   render() {
-    return html`
-      <div class="container">
-        ${this.renderScreen()}
-      </div>
-    `;
+    return html` <div class="container">${this.renderScreen()}</div> `;
   }
 
   private renderScreen() {
     switch (this.currentScreen) {
-      case 'workspace-selector':
-        return html`<workspace-selector @select-workspace=${this.onSelectWorkspace}></workspace-selector>`;
-      case 'workspace-browser':
+      case "workspace-selector":
+        return html`<workspace-selector
+          @select-workspace=${this.onSelectWorkspace}
+        ></workspace-selector>`;
+      case "workspace-browser":
         return html`<workspace-browser
           .workspaceName=${this.currentWorkspace}
           .workspaceKey=${this.currentWorkspace}
           @select-object=${this.onSelectObject}
           @navigate=${this.onNavigate}
         ></workspace-browser>`;
-      case 'object-inspect':
+      case "object-inspect":
         return html`<object-inspect
           .objectId=${this.selectedObject}
           .workspaceKey=${this.currentWorkspace}
           @navigate=${this.onNavigate}
         ></object-inspect>`;
-      case 'list-browser':
+      case "list-browser":
         return html`<list-browser
           .workspaceKey=${this.currentWorkspace}
-          .containerId=${(this.navigateContext?.containerId as string) || ''}
-          .loadoutId=${(this.navigateContext?.loadoutId as string) || ''}
-          .mode=${(this.navigateContext?.mode as 'add-to-contents' | 'remove-from-contents' | 'create-loadout' | 'edit-loadout') || 'create-loadout'}
+          .containerId=${(this.navigateContext?.containerId as string) || ""}
+          .loadoutId=${(this.navigateContext?.loadoutId as string) || ""}
+          .mode=${(this.navigateContext?.mode as
+            | "add-to-contents"
+            | "remove-from-contents"
+            | "create-loadout"
+            | "edit-loadout") || "create-loadout"}
           @navigate=${this.onNavigate}
         ></list-browser>`;
-      case 'loadouts-manager':
+      case "loadouts-manager":
         return html`<loadouts-manager
           .workspaceKey=${this.currentWorkspace}
           @navigate=${this.onNavigate}
         ></loadouts-manager>`;
-      case 'workspace-settings':
+      case "workspace-settings":
         return html`<workspace-settings
           .workspaceKey=${this.currentWorkspace}
           @navigate=${this.onNavigate}
         ></workspace-settings>`;
-      case 'add-remove-item':
+      case "add-remove-item":
         return html`<add-remove-item
           .workspaceKey=${this.currentWorkspace}
           @navigate=${this.onNavigate}
         ></add-remove-item>`;
+      case "layout-browser":
+        return html`<layout-browser
+          @select-layout=${this.onSelectLayout}
+          @navigate=${this.onNavigate}
+        ></layout-browser>`;
+      case "qr-sheet-creator":
+        return html`<qr-sheet-creator
+          @navigate=${this.onNavigate}
+        ></qr-sheet-creator>`;
       default:
         return html`<div>Unknown screen</div>`;
     }
   }
 
   private onSelectWorkspace = (e: CustomEvent<string>) => {
-    this.navigateTo('workspace-browser', { workspace: e.detail });
+    this.navigateTo("workspace-browser", { workspace: e.detail });
   };
 
   private onSelectObject = (e: CustomEvent<string>) => {
-    this.navigateTo('object-inspect', { object: e.detail });
+    this.navigateTo("object-inspect", { object: e.detail });
   };
 
   private onNavigate = (e: CustomEvent<{ screen: Screen; context?: any }>) => {
     this.navigateTo(e.detail.screen, e.detail.context);
   };
+
+  private onSelectLayout = (e: CustomEvent<any>) => {
+    this.navigateTo("qr-sheet-creator", { layout: e.detail });
+
+    setTimeout(() => {
+      const qrSheet = this.querySelector("qr-sheet-creator") as any;
+      if (qrSheet) {
+        qrSheet.setLayout(e.detail);
+      }
+    }, 300);
+  };
 }
 
 declare global {
   interface HTMLElementTagNameMap {
-    'app-shell': AppShell;
+    "app-shell": AppShell;
   }
 }
