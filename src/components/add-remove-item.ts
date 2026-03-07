@@ -14,214 +14,6 @@ export class AddRemoveItem extends LitElement {
     return this;
   }
 
-  static styles = css`
-    :host {
-      display: flex;
-      flex-direction: column;
-      height: 100%;
-    }
-
-    .header {
-      padding: 1rem;
-      border-bottom: 1px solid #ddd;
-      display: flex;
-      gap: 1rem;
-    }
-
-    button {
-      padding: 0.5rem 1rem;
-      background-color: #007bff;
-      color: white;
-      border: none;
-      border-radius: 4px;
-      cursor: pointer;
-    }
-
-    button:hover {
-      background-color: #0056b3;
-    }
-
-    .content {
-      flex: 1;
-      padding: 1.5rem;
-      display: flex;
-      flex-direction: column;
-      gap: 1.5rem;
-      overflow-y: auto;
-    }
-
-    .input-group {
-      display: flex;
-      flex-direction: column;
-      gap: 0.5rem;
-    }
-
-    .input-group label {
-      font-weight: bold;
-    }
-
-    .input-group input,
-    .input-group textarea {
-      padding: 0.75rem;
-      border: 1px solid #ccc;
-      border-radius: 4px;
-      font-family: inherit;
-      font-size: 1rem;
-    }
-
-    .input-group textarea {
-      resize: vertical;
-      min-height: 80px;
-    }
-
-    .scan-container {
-      position: relative;
-      border: 2px solid #007bff;
-      border-radius: 4px;
-      overflow: hidden;
-      background-color: #000;
-      min-height: 300px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-
-    #qr-video {
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-    }
-
-    .scan-preview {
-      border: 2px dashed #007bff;
-      padding: 2rem;
-      text-align: center;
-      border-radius: 4px;
-      min-height: 200px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      background-color: #f8f9fa;
-    }
-
-    .scan-result {
-      padding: 1rem;
-      background-color: #cce5ff;
-      color: #004085;
-      border: 1px solid #b8daff;
-      border-radius: 4px;
-      font-family: monospace;
-      word-break: break-all;
-    }
-
-    .action-buttons {
-      display: flex;
-      gap: 1rem;
-    }
-
-    .action-buttons button {
-      flex: 1;
-    }
-
-    .secondary-btn {
-      background-color: #6c757d;
-    }
-
-    .secondary-btn:hover {
-      background-color: #5a6268;
-    }
-
-    .success-message {
-      padding: 1rem;
-      background-color: #d4edda;
-      color: #155724;
-      border: 1px solid #c3e6cb;
-      border-radius: 4px;
-      margin-bottom: 1rem;
-      display: none;
-    }
-
-    .success-message.show {
-      display: block;
-    }
-
-    .scanning-indicator {
-      position: absolute;
-      top: 10px;
-      right: 10px;
-      background-color: #28a745;
-      color: white;
-      padding: 0.5rem 1rem;
-      border-radius: 4px;
-      font-size: 0.9rem;
-    }
-
-    .mode-toggle {
-      display: flex;
-      gap: 0.5rem;
-      margin-bottom: 1rem;
-    }
-
-    .mode-btn {
-      flex: 1;
-      padding: 0.75rem;
-      border: 2px solid #ccc;
-      background-color: white;
-      color: #333;
-      border-radius: 4px;
-      cursor: pointer;
-      font-weight: bold;
-      transition: all 0.2s;
-    }
-
-    .mode-btn.active {
-      border-color: #007bff;
-      background-color: #007bff;
-      color: white;
-    }
-
-    .mode-btn.remove.active {
-      background-color: #dc3545;
-      border-color: #dc3545;
-    }
-
-    .toast {
-      position: fixed;
-      bottom: 1rem;
-      right: 1rem;
-      padding: 1rem 1.5rem;
-      border-radius: 4px;
-      color: white;
-      font-weight: bold;
-      animation: slideIn 0.3s ease-out;
-      z-index: 1000;
-      max-width: 300px;
-    }
-
-    .toast.success {
-      background-color: #28a745;
-    }
-
-    .toast.error {
-      background-color: #dc3545;
-    }
-
-    .toast.info {
-      background-color: #17a2b8;
-    }
-
-    @keyframes slideIn {
-      from {
-        transform: translateX(400px);
-        opacity: 0;
-      }
-      to {
-        transform: translateX(0);
-        opacity: 1;
-      }
-    }
-  `;
-
   @property()
   declare workspaceKey: string;
 
@@ -270,9 +62,7 @@ export class AddRemoveItem extends LitElement {
   render() {
     return html`
       <div class="header">
-        <button class="secondary-btn" @click=${() => this.goBack()}>
-          Back
-        </button>
+        <h2>Add/Remove Items</h2>
       </div>
       <div class="content">
         ${this.toastMessage
@@ -281,86 +71,96 @@ export class AddRemoveItem extends LitElement {
             `
           : ""}
 
-        <div class="mode-toggle">
+        <div class="tool-bar">
           <button
-            class="mode-btn ${this.mode === "add" ? "active" : ""}"
+            class="mode-btn ${this.mode === "add" ? "highlight" : ""}"
             @click=${() => this.setMode("add")}
           >
             Add Items
           </button>
           <button
-            class="mode-btn remove ${this.mode === "remove" ? "active" : ""}"
+            class="mode-btn remove ${this.mode === "remove" ? "highlight" : ""}"
             @click=${() => this.setMode("remove")}
           >
             Remove Items
+          </button>
+
+          <button class="secondary-btn" @click=${() => this.goBack()}>
+            Back
           </button>
         </div>
 
         ${this.mode === "add"
           ? html`
-              <div class="input-group">
-                <label>Item Name (Manual Entry)</label>
-                <input
-                  type="text"
-                  placeholder="Enter item name (will generate UUID)"
-                  .value=${this.itemName}
-                  @input=${(e: Event) => {
-                    this.itemName = (e.target as HTMLInputElement).value;
-                  }}
-                  @keydown=${(e: KeyboardEvent) => {
-                    if (e.key === "Enter") this.addScannedItem();
-                  }}
-                />
-              </div>
+              <div class="stacked-form">
+                <label
+                  >Item Name (Manual Entry)
+                  <input
+                    type="text"
+                    placeholder="Enter item name (will generate UUID)"
+                    .value=${this.itemName}
+                    @input=${(e: Event) => {
+                      this.itemName = (e.target as HTMLInputElement).value;
+                    }}
+                    @keydown=${(e: KeyboardEvent) => {
+                      if (e.key === "Enter") this.addScannedItem();
+                    }}
+                  />
+                </label>
+                <label
+                  >Item ID
 
-              <div class="input-group">
-                <label>Item ID</label>
+                  <input
+                    type="text"
+                    placeholder="Auto generate UUID"
+                    .value=${this.qrData}
+                    @input=${(e: Event) => {
+                      this.qrData = (e.target as HTMLInputElement).value;
+                    }}
+                /></label>
 
-                <input
-                  type="text"
-                  placeholder="Auto generate UUID"
-                  .value=${this.qrData}
-                  @input=${(e: Event) => {
-                    this.qrData = (e.target as HTMLInputElement).value;
-                  }}
-                />
-              </div>
-
-              <div class="action-buttons">
-                <button @click=${() => this.addScannedItem()}>Add Item</button>
-                <button @click=${() => this.toggleScanning()}>
-                  ${this.isScanning ? "Stop Scanning" : "Scan QR Code"}
-                </button>
+                <div class="tool-bar">
+                  <button @click=${() => this.addScannedItem()}>
+                    Add Item
+                  </button>
+                  <button @click=${() => this.toggleScanning()}>
+                    ${this.isScanning ? "Stop Scanning" : "Scan QR Code"}
+                  </button>
+                </div>
               </div>
             `
           : html`
-              <div class="input-group">
-                <label>Quick Remove Mode</label>
-                <p style="color: #666; font-size: 0.9rem; margin: 0;">
-                  Scan QR codes to quickly remove items from this workspace
-                </p>
-              </div>
+              <div class="stacked-form">
+                <label
+                  >Quick Remove Mode
+                  <p style="color: #666; font-size: 0.9rem; margin: 0;">
+                    Scan QR codes to quickly remove items from this workspace
+                  </p></label
+                >
 
-              <div class="action-buttons">
-                <button @click=${() => this.toggleScanning()}>
-                  ${this.isScanning ? "Stop Scanning" : "Start Scanning"}
-                </button>
+                <div class="tool-bar">
+                  <button @click=${() => this.toggleScanning()}>
+                    ${this.isScanning ? "Stop Scanning" : "Start Scanning"}
+                  </button>
+                </div>
               </div>
             `}
         ${this.isScanning
           ? html`
-              <div class="input-group">
-                <label>QR Scanner</label>
-                <div class="scan-container">
-                  <video id="qr-video"></video>
-                  <div class="scanning-indicator">Scanning...</div>
-                </div>
+              <div class="stacked-form">
+                <label
+                  >QR Scanner
+                  <div class="scan-container">
+                    <video id="qr-video"></video>
+                    <div class="scanning-indicator">Scanning...</div>
+                  </div>
+                </label>
               </div>
             `
           : ""}
         ${this.mode === "add" && this.qrData && !this.isScanning
           ? html`
-              <div class="action-buttons">
+              <div class="tool-bar">
                 <button class="secondary-btn" @click=${() => this.clearScan()}>
                   Clear Scan
                 </button>
@@ -407,9 +207,14 @@ export class AddRemoveItem extends LitElement {
       }
       this.showToast(`✓ "${this.itemName}" added`, "success");
       this.itemName = "";
+
+      const wasScanning = this.isScanning;
       this.qrData = "";
-      // Keep scanning active for fast entry
-      this.startScanning();
+
+      if (wasScanning) {
+        // Keep scanning active for fast entry
+        this.startScanning();
+      }
     } catch (error) {
       this.showToast(`Failed to add item: ${error}`, "error");
     }

@@ -12,6 +12,7 @@ import {
   removeItemFromLoadout,
   lookupItemName,
   getWorkspaceDoc,
+  getItem,
 } from "../services/storage.js";
 import jsQR from "jsqr";
 
@@ -49,10 +50,28 @@ export class ListBrowser extends LitElement {
   @state()
   declare toastType: "success" | "error";
 
+  @state()
+  declare selectingContainer: boolean;
+
+  @state()
+  declare containerFilter: string;
+
+  @state()
+  declare containerList: Array<{ id: string; name: string }>;
+
+  @state()
+  declare containerName: string;
+
   private videoElement: HTMLVideoElement | null = null;
   private scanningInterval: number | null = null;
   private updateListener: ((update: Uint8Array, origin: any) => void) | null =
     null;
+  private previousMode:
+    | "add-to-contents"
+    | "remove-from-contents"
+    | "create-loadout"
+    | "edit-loadout"
+    | null = null;
 
   constructor() {
     super();
@@ -64,6 +83,10 @@ export class ListBrowser extends LitElement {
     this.isScanning = false;
     this.toastMessage = "";
     this.toastType = "success";
+    this.selectingContainer = false;
+    this.containerFilter = "";
+    this.containerList = [];
+    this.containerName = "";
   }
 
   disconnectedCallback() {
@@ -111,6 +134,9 @@ export class ListBrowser extends LitElement {
       changedProperties.has("loadoutId")
     ) {
       this.loadItems();
+      if (changedProperties.has("containerId") && !this.selectingContainer) {
+        this.loadContainerName();
+      }
     }
   }
 
@@ -118,7 +144,10 @@ export class ListBrowser extends LitElement {
     if (!this.workspaceKey) return;
 
     try {
-      if (this.mode === "remove-from-contents" && this.containerId) {
+      if (this.selectingContainer) {
+        // Load all items as containers
+        this.containerList = await getItems(this.workspaceKey);
+      } else if (this.mode === "remove-from-contents" && this.containerId) {
         // For remove mode, load items that are IN the container
         this.items = (await getItemContents(this.workspaceKey, this.containerId)).map(
           (content) => ({
@@ -138,6 +167,18 @@ export class ListBrowser extends LitElement {
     } catch (error) {
       console.error("Failed to load items:", error);
       this.items = [];
+      this.containerList = [];
+    }
+  }
+
+  private async loadContainerName() {
+    if (!this.workspaceKey || !this.containerId) return;
+    try {
+      const item = await getItem(this.workspaceKey, this.containerId);
+      this.containerName = item.title;
+    } catch (error) {
+      console.error("Failed to load container name:", error);
+      this.containerName = "";
     }
   }
 
@@ -160,97 +201,159 @@ export class ListBrowser extends LitElement {
 
       <div class="tool-bar">
         <h2>${title}</h2>
-        ${this.mode === "add-to-contents" ||
-        this.mode === "remove-from-contents" ||
-        this.mode === "create-loadout" ||
-        this.mode === "edit-loadout"
+        ${this.selectingContainer
           ? html`
-              <button @click=${() => this.toggleScanning()}>
-                ${this.isScanning ? "Stop Scan" : "Scan QR"}
-              </button>
+              <button @click=${() => this.cancelContainerSelection()}>Cancel</button>
             `
-          : ""}
-        <button @click=${() => this.goBack()}>Back</button>
+          : html`
+              ${this.mode === "add-to-contents" ||
+              this.mode === "remove-from-contents" ||
+              this.mode === "create-loadout" ||
+              this.mode === "edit-loadout"
+                ? html`
+                    <button @click=${() => this.toggleScanning()}>
+                      ${this.isScanning ? "Stop Scan" : "Scan QR"}
+                    </button>
+                  `
+                : ""}
+              <button @click=${() => this.goBack()}>Back</button>
+            `}
       </div>
+
+      ${!this.selectingContainer && (this.mode === "add-to-contents" || this.mode === "remove-from-contents")
+        ? html`
+            <div class="container-header">
+              <div class="container-info">
+                <strong>Container:</strong> ${this.containerName}
+              </div>
+              <div class="tool-bar">
+                <button @click=${() => this.toggleMode()}>
+                  ${this.mode === "add-to-contents" ? "Switch to Remove" : "Switch to Add"}
+                </button>
+                <button @click=${() => this.startContainerSelection()}>
+                  Select Different Container
+                </button>
+              </div>
+            </div>
+          `
+        : ""}
       <div class="flex-row gaps padding">
-        ${this.isScanning
+        ${this.selectingContainer
           ? html`
-              <div class="scan-container w-100vw">
-                <video id="qr-video"></video>
-                <div class="scanning-indicator">Scanning...</div>
+              <div class="container-selector">
+                <input
+                  type="text"
+                  placeholder="Filter containers..."
+                  @input=${(e: Event) =>
+                    (this.containerFilter = (e.target as HTMLInputElement).value)}
+                  class="filter-input"
+                />
+                ${this.getFilteredContainers().length > 0
+                  ? html`
+                      ${this.getFilteredContainers().map(
+                        (container) => html`
+                          <div class="card">
+                            <div class="item-info">
+                              <div class="item-name">${container.name}</div>
+                            </div>
+                            <div class="tool-bar">
+                              <button
+                                class="action-btn add-btn"
+                                @click=${() =>
+                                  this.selectContainer(container.id, container.name)}
+                              >
+                                Select
+                              </button>
+                            </div>
+                          </div>
+                        `
+                      )}
+                    `
+                  : html`
+                      <div class="empty-message">No containers found</div>
+                    `}
               </div>
             `
-          : ""}
-        ${this.mode === "add-to-contents" ||
-        this.mode === "remove-from-contents" ||
-        this.mode === "create-loadout" ||
-        this.mode === "edit-loadout"
-          ? html`
-              ${this.items.length > 0
+          : html`
+              ${this.isScanning
                 ? html`
-                    ${this.items.map(
-                      (item) => html`
-                        <div class="card">
-                          <div class="item-info">
-                            <div class="item-name">${item.name}</div>
-                          </div>
-                          <div class="tool-bar">
-                            ${this.mode === "add-to-contents" ||
-                            this.mode === "create-loadout"
-                              ? html`
-                                  ${this.mode === "add-to-contents"
+                    <div class="scan-container w-100vw">
+                      <video id="qr-video"></video>
+                      <div class="scanning-indicator">Scanning...</div>
+                    </div>
+                  `
+                : ""}
+              ${this.mode === "add-to-contents" ||
+              this.mode === "remove-from-contents" ||
+              this.mode === "create-loadout" ||
+              this.mode === "edit-loadout"
+                ? html`
+                    ${this.items.length > 0
+                      ? html`
+                          ${this.items.map(
+                            (item) => html`
+                              <div class="card">
+                                <div class="item-info">
+                                  <div class="item-name">${item.name}</div>
+                                </div>
+                                <div class="tool-bar">
+                                  ${this.mode === "add-to-contents" ||
+                                  this.mode === "create-loadout"
                                     ? html`
-                                        <button
-                                          class="action-btn add-btn"
-                                          @click=${() =>
-                                            this.addItemToContainer(
-                                              item.id,
-                                              item.name
-                                            )}
-                                        >
-                                          Add
-                                        </button>
+                                        ${this.mode === "add-to-contents"
+                                          ? html`
+                                              <button
+                                                class="action-btn add-btn"
+                                                @click=${() =>
+                                                  this.addItemToContainer(
+                                                    item.id,
+                                                    item.name
+                                                  )}
+                                              >
+                                                Add
+                                              </button>
+                                            `
+                                          : html`
+                                              <button
+                                                class="action-btn add-btn"
+                                                @click=${() =>
+                                                  this.addItemToLoadout(
+                                                    item.id,
+                                                    item.name
+                                                  )}
+                                              >
+                                                Add
+                                              </button>
+                                            `}
                                       `
                                     : html`
                                         <button
-                                          class="action-btn add-btn"
+                                          class="action-btn danger"
                                           @click=${() =>
-                                            this.addItemToLoadout(
-                                              item.id,
-                                              item.name
-                                            )}
+                                            this.mode === "remove-from-contents"
+                                              ? this.removeItemFromContainer(item.id)
+                                              : this.removeItemFromLoadout(item.id)}
                                         >
-                                          Add
+                                          Remove
                                         </button>
                                       `}
-                                `
-                              : html`
-                                  <button
-                                    class="action-btn danger"
-                                    @click=${() =>
-                                      this.mode === "remove-from-contents"
-                                        ? this.removeItemFromContainer(item.id)
-                                        : this.removeItemFromLoadout(item.id)}
-                                  >
-                                    Remove
-                                  </button>
-                                `}
+                                </div>
+                              </div>
+                            `
+                          )}
+                        `
+                      : html`
+                          <div class="empty-message">
+                            ${this.mode === "remove-from-contents"
+                              ? "No items in container"
+                              : this.mode === "edit-loadout"
+                              ? "No items in loadout"
+                              : "No items yet"}
                           </div>
-                        </div>
-                      `
-                    )}
+                        `}
                   `
-                : html`
-                    <div class="empty-message">
-                      ${this.mode === "remove-from-contents"
-                        ? "No items in container"
-                        : this.mode === "edit-loadout"
-                        ? "No items in loadout"
-                        : "No items yet"}
-                    </div>
-                  `}
-            `
-          : ""}
+                : ""}
+            `}
       </div>
     `;
   }
@@ -303,6 +406,43 @@ export class ListBrowser extends LitElement {
       console.error("Failed to remove item from loadout:", error);
       this.showToast("Failed to remove item", "error");
     }
+  }
+
+  private toggleMode() {
+    if (this.mode === "add-to-contents") {
+      this.mode = "remove-from-contents";
+    } else if (this.mode === "remove-from-contents") {
+      this.mode = "add-to-contents";
+    }
+  }
+
+  private startContainerSelection() {
+    this.previousMode = this.mode;
+    this.selectingContainer = true;
+    this.containerFilter = "";
+    this.loadItems();
+  }
+
+  private cancelContainerSelection() {
+    this.selectingContainer = false;
+    this.containerFilter = "";
+    this.previousMode = null;
+    this.loadItems();
+  }
+
+  private selectContainer(containerId: string, containerName: string) {
+    this.containerId = containerId;
+    this.containerName = containerName;
+    this.selectingContainer = false;
+    this.containerFilter = "";
+    this.loadItems();
+  }
+
+  private getFilteredContainers() {
+    const filter = this.containerFilter.toLowerCase();
+    return this.containerList.filter((container) =>
+      container.name.toLowerCase().includes(filter)
+    );
   }
 
   private goBack() {
@@ -473,6 +613,14 @@ export class ListBrowser extends LitElement {
       }
 
       const itemName = await lookupItemName(this.workspaceKey, qrData);
+
+      if (this.selectingContainer) {
+        // In container selection mode, select the scanned container
+        this.selectContainer(qrData, itemName);
+        this.stopScanning();
+        return;
+      }
+
       if (this.mode === "add-to-contents") {
         // Add the found item to container
         await addItemToContents(this.workspaceKey, this.containerId, qrData);
