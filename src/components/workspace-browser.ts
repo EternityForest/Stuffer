@@ -125,7 +125,6 @@ export class WorkspaceBrowser extends LitElement {
               At ${obj.inContainer}
               
               </div>` : ""}
-                <div>${new Date(obj.createdAt).toLocaleDateString()}</div>
               </div>
             </div>
           `
