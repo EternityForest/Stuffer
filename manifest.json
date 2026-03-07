@@ -24,7 +24,7 @@
   ],
   "protocol_handlers": [
     {
-      "protocol": "web+assetid",
+      "protocol": "asset-id",
       "url": "/?asset-id=%s"
     }
   ],
