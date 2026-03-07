@@ -242,6 +242,14 @@ export class ListBrowser extends LitElement {
             </div>
           `
         : ""}
+      ${this.isScanning
+        ? html`
+            <div class="scan-container w-100vw">
+              <video id="qr-video"></video>
+              <div class="scanning-indicator">Scanning...</div>
+            </div>
+          `
+        : ""}
       <div class="flex-row gaps padding">
         ${this.selectingContainer
           ? html`
@@ -287,14 +295,6 @@ export class ListBrowser extends LitElement {
               </div>
             `
           : html`
-              ${this.isScanning
-                ? html`
-                    <div class="scan-container w-100vw">
-                      <video id="qr-video"></video>
-                      <div class="scanning-indicator">Scanning...</div>
-                    </div>
-                  `
-                : ""}
               ${this.mode === "add-to-contents" ||
               this.mode === "remove-from-contents" ||
               this.mode === "create-loadout" ||
