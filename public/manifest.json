@@ -2,7 +2,7 @@
   "name": "Stuffer - Inventory Tracker",
   "short_name": "Stuffer",
   "description": "Track and manage your inventory with QR codes",
-  "start_url": "/",
+  "start_url": ".",
   "scope": "/",
   "display": "standalone",
   "theme_color": "#007bff",
