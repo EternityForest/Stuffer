@@ -116,13 +116,13 @@ export class ListBrowser extends LitElement {
 
   private async cleanupYjsListener() {
     if (this.updateListener) {
-        try {
-          const yDoc = await getWorkspaceDoc(this.workspaceKey);
-          yDoc.off("update", this.updateListener!);
-          this.updateListener = null;
-        } catch (error) {
-          console.error("Failed to unsubscribe from Yjs updates:", error);
-        }
+      try {
+        const yDoc = await getWorkspaceDoc(this.workspaceKey);
+        yDoc.off("update", this.updateListener!);
+        this.updateListener = null;
+      } catch (error) {
+        console.error("Failed to unsubscribe from Yjs updates:", error);
+      }
     }
   }
 
@@ -149,13 +149,13 @@ export class ListBrowser extends LitElement {
         this.containerList = await getItems(this.workspaceKey);
       } else if (this.mode === "remove-from-contents" && this.containerId) {
         // For remove mode, load items that are IN the container
-        this.items = (await getItemContents(this.workspaceKey, this.containerId)).map(
-          (content) => ({
-            id: content.id,
-            name: content.name,
-            createdAt: new Date().toISOString(),
-          })
-        );
+        this.items = (
+          await getItemContents(this.workspaceKey, this.containerId)
+        ).map((content) => ({
+          id: content.id,
+          name: content.name,
+          createdAt: new Date().toISOString(),
+        }));
       } else if (this.mode === "edit-loadout" && this.loadoutId) {
         // For edit loadout mode, load items that are IN the loadout
         const loadout = await getLoadout(this.workspaceKey, this.loadoutId);
@@ -203,7 +203,9 @@ export class ListBrowser extends LitElement {
         <h2>${title}</h2>
         ${this.selectingContainer
           ? html`
-              <button @click=${() => this.cancelContainerSelection()}>Cancel</button>
+              <button @click=${() => this.cancelContainerSelection()}>
+                Cancel
+              </button>
             `
           : html`
               ${this.mode === "add-to-contents" ||
@@ -220,7 +222,8 @@ export class ListBrowser extends LitElement {
             `}
       </div>
 
-      ${!this.selectingContainer && (this.mode === "add-to-contents" || this.mode === "remove-from-contents")
+      ${!this.selectingContainer &&
+      (this.mode === "add-to-contents" || this.mode === "remove-from-contents")
         ? html`
             <div class="container-header">
               <div class="container-info">
@@ -228,7 +231,9 @@ export class ListBrowser extends LitElement {
               </div>
               <div class="tool-bar">
                 <button @click=${() => this.toggleMode()}>
-                  ${this.mode === "add-to-contents" ? "Switch to Remove" : "Switch to Add"}
+                  ${this.mode === "add-to-contents"
+                    ? "Switch to Remove"
+                    : "Switch to Add"}
                 </button>
                 <button @click=${() => this.startContainerSelection()}>
                   Select Different Container
@@ -245,33 +250,40 @@ export class ListBrowser extends LitElement {
                   type="text"
                   placeholder="Filter containers..."
                   @input=${(e: Event) =>
-                    (this.containerFilter = (e.target as HTMLInputElement).value)}
+                    (this.containerFilter = (
+                      e.target as HTMLInputElement
+                    ).value)}
                   class="filter-input"
                 />
-                ${this.getFilteredContainers().length > 0
-                  ? html`
-                      ${this.getFilteredContainers().map(
-                        (container) => html`
-                          <div class="card">
-                            <div class="item-info">
-                              <div class="item-name">${container.name}</div>
+                <div class="flex-row gaps padding">
+                  ${this.getFilteredContainers().length > 0
+                    ? html`
+                        ${this.getFilteredContainers().map(
+                          (container) => html`
+                            <div class="card">
+                              <div class="item-info">
+                                <div class="item-name">${container.name}</div>
+                              </div>
+                              <div class="tool-bar">
+                                <button
+                                  class="action-btn add-btn"
+                                  @click=${() =>
+                                    this.selectContainer(
+                                      container.id,
+                                      container.name
+                                    )}
+                                >
+                                  Select
+                                </button>
+                              </div>
                             </div>
-                            <div class="tool-bar">
-                              <button
-                                class="action-btn add-btn"
-                                @click=${() =>
-                                  this.selectContainer(container.id, container.name)}
-                              >
-                                Select
-                              </button>
-                            </div>
-                          </div>
-                        `
-                      )}
-                    `
-                  : html`
-                      <div class="empty-message">No containers found</div>
-                    `}
+                          `
+                        )}
+                      `
+                    : html`
+                        <div class="empty-message">No containers found</div>
+                      `}
+                </div>
               </div>
             `
           : html`
@@ -331,8 +343,12 @@ export class ListBrowser extends LitElement {
                                           class="action-btn danger"
                                           @click=${() =>
                                             this.mode === "remove-from-contents"
-                                              ? this.removeItemFromContainer(item.id)
-                                              : this.removeItemFromLoadout(item.id)}
+                                              ? this.removeItemFromContainer(
+                                                  item.id
+                                                )
+                                              : this.removeItemFromLoadout(
+                                                  item.id
+                                                )}
                                         >
                                           Remove
                                         </button>
@@ -545,9 +561,7 @@ export class ListBrowser extends LitElement {
       this.requestUpdate();
 
       setTimeout(() => {
-        this.videoElement = this.querySelector(
-          "#qr-video"
-        ) as HTMLVideoElement;
+        this.videoElement = this.querySelector("#qr-video") as HTMLVideoElement;
         if (this.videoElement) {
           this.videoElement.srcObject = stream;
           this.videoElement.play();
@@ -628,7 +642,11 @@ export class ListBrowser extends LitElement {
         this.showToast(`✓ Added ${itemName}`, "success");
       } else if (this.mode === "remove-from-contents") {
         // Remove the found item from container
-        await removeItemFromContents(this.workspaceKey, this.containerId, qrData);
+        await removeItemFromContents(
+          this.workspaceKey,
+          this.containerId,
+          qrData
+        );
         this.showToast(`✓ Removed ${itemName}`, "success");
       }
 
