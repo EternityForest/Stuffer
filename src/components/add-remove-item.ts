@@ -307,7 +307,7 @@ export class AddRemoveItem extends LitElement {
       this.requestUpdate();
 
       setTimeout(() => {
-        this.videoElement = this.shadowRoot?.querySelector(
+        this.videoElement = this.querySelector(
           "#qr-video"
         ) as HTMLVideoElement;
         if (this.videoElement) {
