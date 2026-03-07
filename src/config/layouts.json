@@ -1,32 +1,19 @@
 [
   {
-    "id": "avery-5160",
-    "name": "Avery 5160 (4x8, 1\" x 2.625\")",
+    "id": "a22805",
+    "name": "22805 (1.5\" x 1.5\")",
     "pageSizeWidth": 215.9,
     "pageSizeHeight": 279.4,
-    "leftMargin": 4.4,
-    "topMargin": 10.7,
-    "rowCount": 10,
+    "leftMargin": 19.812,
+    "topMargin": 11.684,
+    "rightMargin": null,
+    "bottomMargin": null,
+    "rowCount": 6,
     "colCount": 4,
-    "stickerWidth": 26.67,
-    "stickerHeight": 66.675,
-    "horizontalGap": 3.81,
-    "verticalGap": 0,
-    "description": "Standard address labels"
-  },
-  {
-    "id": "avery-5161",
-    "name": "Avery 5161 (3x10, 1\" x 3.33\")",
-    "pageSizeWidth": 215.9,
-    "pageSizeHeight": 279.4,
-    "leftMargin": 4.4,
-    "topMargin": 10.7,
-    "rowCount": 10,
-    "colCount": 3,
-    "stickerWidth": 66.675,
-    "stickerHeight": 26.67,
-    "horizontalGap": 3.81,
-    "verticalGap": 0,
-    "description": "Business cards"
+    "stickerWidth": 38.1,
+    "stickerHeight": 38.1,
+    "horizontalGap": null,
+    "verticalGap": null,
+    "description": "1.5 Square Stickers"
   }
 ]

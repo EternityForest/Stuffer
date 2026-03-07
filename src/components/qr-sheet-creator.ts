@@ -6,9 +6,9 @@ import QRCode from 'qrcode';
 
 @customElement('qr-sheet-creator')
 export class QRSheetCreator extends LitElement {
-  override createRenderRoot() {
-    return this;
-  }
+  // override createRenderRoot() {
+  //   return this;
+  // }
 
   @state()
   declare layout: StickerLayout | null;
@@ -33,6 +33,28 @@ export class QRSheetCreator extends LitElement {
 
   private async generateSheet() {
     if (!this.layout) return;
+
+    if(this.layout.rightMargin===null){
+      this.layout.rightMargin = this.layout.leftMargin;
+    }
+
+    if(this.layout.bottomMargin===null){
+      this.layout.bottomMargin = this.layout.topMargin;
+    }
+
+    if(this.layout.verticalGap===null){
+      const totalGap = this.layout.pageSizeHeight -((
+        this.layout.rowCount * this.layout.stickerHeight
+      ) + (this.layout.topMargin + this.layout.bottomMargin));
+      this.layout.verticalGap = totalGap / (this.layout.rowCount - 1);
+    }
+
+    if(this.layout.horizontalGap===null){
+      const totalGap = this.layout.pageSizeWidth -((
+        this.layout.colCount * this.layout.stickerWidth
+      ) + (this.layout.leftMargin + this.layout.rightMargin));
+      this.layout.horizontalGap = totalGap / (this.layout.colCount - 1);
+    }
 
     this.isGenerating = true;
     const qrCodes: Array<{ id: string; dataUrl: string }> = [];
@@ -99,8 +121,8 @@ export class QRSheetCreator extends LitElement {
 
     .print-container {
       padding: 20px;
-      display: flex;
       justify-content: center;
+      overflow: visible;
     }
 
     .sheet {
@@ -118,12 +140,12 @@ export class QRSheetCreator extends LitElement {
     }
 
     .sticker {
+      box-sizing: border-box;
       display: flex;
       align-items: center;
       justify-content: center;
       overflow: hidden;
       background: white;
-      border: 1px solid #e0e0e0;
     }
 
     .sticker img {
@@ -181,9 +203,10 @@ export class QRSheetCreator extends LitElement {
       `;
     }
 
-    const pageSizeMm = `${this.layout.pageSizeWidth}mm ${this.layout.pageSizeHeight}mm`;
-    const stickerWidthMm = `${this.layout.stickerWidth + this.layout.horizontalGap}mm`;
-    const stickerHeightMm = `${this.layout.stickerHeight + this.layout.verticalGap}mm`;
+    const pageWidthMm = `${this.layout.pageSizeWidth}mm`;
+    const pageHeightMm = `${this.layout.pageSizeHeight}mm`;
+    const stickerWidthMm = `${this.layout.stickerWidth}mm`;
+    const stickerHeightMm = `${this.layout.stickerHeight}mm`;
 
     return html`
       <div class="toolbar">
@@ -198,7 +221,10 @@ export class QRSheetCreator extends LitElement {
         <div
           class="sheet"
           style="
-            width: ${pageSizeMm};
+            box-sizing: border-box;
+            display: block;
+            width: ${pageWidthMm};
+            height: ${pageHeightMm};
             padding: ${this.layout.topMargin}mm ${this.layout.leftMargin}mm;
           "
         >

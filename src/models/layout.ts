@@ -5,11 +5,13 @@ export interface StickerLayout {
   pageSizeHeight: number; // in mm
   leftMargin: number; // in mm
   topMargin: number; // in mm
+  rightMargin: number|null; // in mm
+  bottomMargin: number|null; // in mm
   rowCount: number;
   colCount: number;
   stickerWidth: number; // in mm
   stickerHeight: number; // in mm
-  horizontalGap: number; // in mm
-  verticalGap: number; // in mm
+  horizontalGap: number | null; // in mm
+  verticalGap: number | null; // in mm
   description: string;
 }
