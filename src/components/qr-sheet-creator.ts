@@ -3,6 +3,7 @@ import { customElement, state } from "lit/decorators.js";
 import type { StickerLayout } from "../models/layout.js";
 import { generateItemId } from "../services/uuid.js";
 import QRCode from "qrcode";
+import { toPng } from "dom-to-image";
 
 @customElement("qr-sheet-creator")
 export class QRSheetCreator extends LitElement {
@@ -156,7 +157,6 @@ export class QRSheetCreator extends LitElement {
       justify-content: center;
       overflow: hidden;
       background: white;
-      border: 1px solid #ddd;
     }
 
     .sticker img {
@@ -229,11 +229,14 @@ export class QRSheetCreator extends LitElement {
           ${this.layout.name} - ${this.qrCodes.length} stickers
         </div>
         <button @click=${this.print}>Print</button>
+        <button @click=${this.saveAsImage}>Save as Image</button>
+
       </div>
 
       <div class="print-container">
         <div
           class="sheet"
+          id="sheet-target"
           style="
             box-sizing: border-box;
             display: block;
@@ -272,6 +275,21 @@ export class QRSheetCreator extends LitElement {
 
   private print() {
     window.print();
+  }
+
+  private async saveAsImage() {
+    const element = this.shadowRoot?.querySelector("#sheet-target") as HTMLElement;
+    if (!element) return;
+
+    try {
+      const dataUrl = await toPng(element);
+      const link = document.createElement("a");
+      link.href = dataUrl;
+      link.download = `${this.layout?.name || "sheet"}.png`;
+      link.click();
+    } catch (error) {
+      console.error("Failed to save image:", error);
+    }
   }
 
   private goBack() {
