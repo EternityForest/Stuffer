@@ -16,5 +16,23 @@
     "horizontalGap": null,
     "verticalGap": null,
     "description": "1.5 Square Stickers"
+  },
+  {
+    "id": "12mmx10",
+    "name": "10x codes on 12mm label tape",
+    "pageSizeWidth": 156,
+    "pageSizeHeight": 12,
+    "leftMargin": 2,
+    "topMargin": 0,
+    "rightMargin": null,
+    "bottomMargin": null,
+    "rowCount": 1,
+    "colCount": 10,
+    "stickerWidth": 12,
+    "stickerHeight": 12,
+    "stickerMargin": 0.5,
+    "horizontalGap": null,
+    "verticalGap": null,
+    "description": "For printing on 12mm label tape"
   }
 ]

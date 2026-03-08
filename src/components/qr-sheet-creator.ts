@@ -1,10 +1,10 @@
-import { LitElement, html, css } from 'lit';
-import { customElement, state } from 'lit/decorators.js';
-import type { StickerLayout } from '../models/layout.js';
-import { generateItemId } from '../services/uuid.js';
-import QRCode from 'qrcode';
+import { LitElement, html, css } from "lit";
+import { customElement, state } from "lit/decorators.js";
+import type { StickerLayout } from "../models/layout.js";
+import { generateItemId } from "../services/uuid.js";
+import QRCode from "qrcode";
 
-@customElement('qr-sheet-creator')
+@customElement("qr-sheet-creator")
 export class QRSheetCreator extends LitElement {
   // override createRenderRoot() {
   //   return this;
@@ -34,26 +34,36 @@ export class QRSheetCreator extends LitElement {
   private async generateSheet() {
     if (!this.layout) return;
 
-    if(this.layout.rightMargin===null){
+    if (this.layout.rightMargin === null) {
       this.layout.rightMargin = this.layout.leftMargin;
     }
 
-    if(this.layout.bottomMargin===null){
+    if (this.layout.bottomMargin === null) {
       this.layout.bottomMargin = this.layout.topMargin;
     }
 
-    if(this.layout.verticalGap===null){
-      const totalGap = this.layout.pageSizeHeight -((
-        this.layout.rowCount * this.layout.stickerHeight
-      ) + (this.layout.topMargin + this.layout.bottomMargin));
-      this.layout.verticalGap = totalGap / (this.layout.rowCount - 1);
+    if (this.layout.verticalGap === null) {
+      if (this.layout.rowCount === 1) {
+        this.layout.verticalGap = 0;
+      } else {
+        const totalGap =
+          this.layout.pageSizeHeight -
+          (this.layout.rowCount * this.layout.stickerHeight +
+            (this.layout.topMargin + this.layout.bottomMargin));
+        this.layout.verticalGap = totalGap / (this.layout.rowCount - 1);
+      }
     }
 
-    if(this.layout.horizontalGap===null){
-      const totalGap = this.layout.pageSizeWidth -((
-        this.layout.colCount * this.layout.stickerWidth
-      ) + (this.layout.leftMargin + this.layout.rightMargin));
-      this.layout.horizontalGap = totalGap / (this.layout.colCount - 1);
+    if (this.layout.horizontalGap === null) {
+      if (this.layout.colCount === 1) {
+        this.layout.horizontalGap = 0;
+      } else {
+        const totalGap =
+          this.layout.pageSizeWidth -
+          (this.layout.colCount * this.layout.stickerWidth +
+            (this.layout.leftMargin + this.layout.rightMargin));
+        this.layout.horizontalGap = totalGap / (this.layout.colCount - 1);
+      }
     }
 
     this.isGenerating = true;
@@ -66,8 +76,8 @@ export class QRSheetCreator extends LitElement {
         width: 200,
         margin: 1,
         color: {
-          dark: '#000000',
-          light: '#FFFFFF',
+          dark: "#000000",
+          light: "#FFFFFF",
         },
       });
       qrCodes.push({ id, dataUrl });
@@ -168,7 +178,7 @@ export class QRSheetCreator extends LitElement {
         padding: 0;
       }
 
-      main{
+      main {
         margin: 0 !important;
         padding: 0 !important;
       }
@@ -235,8 +245,10 @@ export class QRSheetCreator extends LitElement {
           <div
             class="sticker-grid"
             style="
-              grid-template-columns: repeat(${this.layout.colCount}, ${stickerWidthMm});
-              grid-template-rows: repeat(${this.layout.rowCount}, ${stickerHeightMm});
+              grid-template-columns: repeat(${this.layout
+              .colCount}, ${stickerWidthMm});
+              grid-template-rows: repeat(${this.layout
+              .rowCount}, ${stickerHeightMm});
               gap: ${this.layout.verticalGap}mm ${this.layout.horizontalGap}mm;
             "
           >
@@ -264,9 +276,9 @@ export class QRSheetCreator extends LitElement {
 
   private goBack() {
     this.dispatchEvent(
-      new CustomEvent('navigate', {
+      new CustomEvent("navigate", {
         detail: {
-          screen: 'layout-browser',
+          screen: "layout-browser",
           context: {},
         },
         bubbles: true,
@@ -278,6 +290,6 @@ export class QRSheetCreator extends LitElement {
 
 declare global {
   interface HTMLElementTagNameMap {
-    'qr-sheet-creator': QRSheetCreator;
+    "qr-sheet-creator": QRSheetCreator;
   }
 }
