@@ -23,6 +23,16 @@ and logs are editable.
 Loadouts are reusable packing lists. Any box can
 have a selected loadout, if the real contents don't match, it displays a warning.
 
+### Reinventory
+
+Items in the contents section display the time they were last scanned into a container. Re-add them again to update the date and show that they
+have been recently inspected.
+
+Every container has a reinventory date.  If you
+select "recheck inventory", all contents
+that have not been re-added since that date will show a warning.
+
+You can use this to recheck the contents of a box before leaving a site.
 
 ### Sync
 

@@ -16,6 +16,8 @@ import {
   getWorkspaceDoc,
   lookupItemName,
 } from "../services/storage.js";
+
+import type { ItemData, ItemContentRecord } from "../services/storage.js";
 import { compressImage } from "../services/imageCompression.js";
 
 @customElement("object-inspect")
@@ -37,7 +39,13 @@ export class ObjectInspect extends LitElement {
   declare description: string;
 
   @state()
-  declare contents: Array<{ id: string; name: string }>;
+  declare contents: Array<ItemContentRecord>;
+
+  @state()
+  declare locationTitle: string;
+
+  @state()
+  declare item: ItemData | null;
 
   @state()
   declare imageData: string | null;
@@ -94,6 +102,22 @@ export class ObjectInspect extends LitElement {
   private updateListener: ((update: Uint8Array, origin: any) => void) | null =
     null;
 
+  private isContentRecordCurrent(
+    record: ItemContentRecord,
+    container: ItemData
+  ) {
+    const checkDate = new Date(
+      container.needRecheckContentsAfter || "1/1/1970"
+    );
+    const recordDate = new Date(record.checkedAt || "1/1/1970");
+
+    if (checkDate.getTime() > recordDate.getTime()) {
+      return false;
+    }
+
+    return true;
+  }
+
   constructor() {
     super();
     this.objectId = "";
@@ -113,6 +137,9 @@ export class ObjectInspect extends LitElement {
     this.lastScannedLocation = null;
     this.lastScannedTimestamp = null;
     this.inContainer = null;
+    this.locationTitle = "";
+
+    this.item = null;
   }
 
   connectedCallback() {
@@ -171,6 +198,7 @@ export class ObjectInspect extends LitElement {
 
     try {
       const item = await getItem(this.workspaceKey, this.objectId);
+      this.item = item;
       this.title = item.title;
       this.lastScannedTimestamp = item.lastScannedTimestamp;
       this.lastScannedLocation = item.lastScannedLocation;
@@ -178,6 +206,12 @@ export class ObjectInspect extends LitElement {
       this.description = item.description;
       this.imageData = (item as any).imageData || null;
       this.selectedLoadout = item.selectedLoadout || null;
+      if (this.inContainer) {
+        this.locationTitle = await lookupItemName(
+          this.workspaceKey,
+          this.inContainer
+        );
+      }
       this.loadContents();
       this.loadLoadouts();
       this.checkLoadoutMismatch();
@@ -548,23 +582,10 @@ export class ObjectInspect extends LitElement {
           </div>
         </div>
 
-        <div class="contents-section">
-          <div class="tool-bar">
-            <button @click=${() => this.addContents()}>Add Contents</button>
-            <button @click=${() => this.removeContents()}>
-              Remove Contents
-            </button>
-            <button @click=${() => this.saveAsLoadout()}>
-              Save as Loadout
-            </button>
-            <button @click=${() => this.recheckInventory()}>
-              Recheck Inventory
-            </button>
-          </div>
-
+    
 
           <h3>Location</h3>
-          <p>${this.inContainer ? "In Container " + lookupItemName(this.workspaceKey,this.inContainer) : ""}</p>
+          <p>${this.inContainer ? "In Container " + this.locationTitle : ""}</p>
           
           ${
             this.lastScannedLocation
@@ -581,84 +602,111 @@ export class ObjectInspect extends LitElement {
               : ""
           }
 
-          <h3>Contents</h3>
-          ${
-            this.missingItems.length > 0 || this.extraItems.length > 0
-              ? html`
-                  <div
-                    style="margin-bottom: 1rem; padding: 0.75rem; background-color: #f8f9fa; border-radius: 4px; font-size: 0.9rem;"
-                  >
-                    ${this.missingItems.length > 0
-                      ? html`
-                          <div style="color: #856404; margin-bottom: 0.5rem;">
-                            <div
-                              style="font-weight: bold; margin-bottom: 0.25rem;"
+          <h3>Contents</h3>    
+          
+          <div class="contents-section">
+            <div class="tool-bar">
+              <button @click=${() => this.addContents()}>Add Contents</button>
+              <button @click=${() => this.removeContents()}>
+                Remove Contents
+              </button>
+              <button @click=${() => this.saveAsLoadout()}>
+                Save as Loadout
+              </button>
+              <button @click=${() => this.recheckInventory()}>
+                Recheck Inventory
+              </button>
+            </div>
+
+            ${
+              this.missingItems.length > 0 || this.extraItems.length > 0
+                ? html`
+                    <div
+                      style="margin-bottom: 1rem; padding: 0.75rem; background-color: #f8f9fa; border-radius: 4px; font-size: 0.9rem;"
+                    >
+                      ${this.missingItems.length > 0
+                        ? html`
+                            <div style="color: #856404; margin-bottom: 0.5rem;">
+                              <div
+                                style="font-weight: bold; margin-bottom: 0.25rem;"
+                              >
+                                ⚠️ Missing from loadout:
+                              </div>
+                              <div style="margin-left: 1rem;">
+                                ${this.missingItems.map(
+                                  (item) => html`
+                                    <div>
+                                      ${item.name} (qty: ${item.quantity})
+                                    </div>
+                                  `
+                                )}
+                              </div>
+                            </div>
+                          `
+                        : ""}
+                      ${this.extraItems.length > 0
+                        ? html`
+                            <div style="color: #004085;">
+                              <div
+                                style="font-weight: bold; margin-bottom: 0.25rem;"
+                              >
+                                ℹ️ Extra items not in loadout:
+                              </div>
+                              <div style="margin-left: 1rem;">
+                                ${this.extraItems.map(
+                                  (item) => html`
+                                    <div>
+                                      ${item.name} (qty: ${item.quantity})
+                                    </div>
+                                  `
+                                )}
+                              </div>
+                            </div>
+                          `
+                        : ""}
+                    </div>
+                  `
+                : ""
+            }
+            ${
+              this.contents.length > 0
+                ? html`
+                    <div class="contents-list">
+                      ${this.contents.map((content) => {
+                        const isMissing =
+                          this.selectedLoadout &&
+                          this.missingItems.some((m) => m.id === content.id);
+                        const isExtra =
+                          this.selectedLoadout &&
+                          this.extraItems.some((e) => e.id === content.id);
+                        const className = isMissing
+                          ? "warning"
+                          : isExtra
+                          ? "extra"
+                          : "";
+                        return html`
+                          <div class="content-item ${className}">
+                            <span class="content-item-name"
+                              ><b>${content.name}</b></span
                             >
-                              ⚠️ Missing from loadout:
-                            </div>
-                            <div style="margin-left: 1rem;">
-                              ${this.missingItems.map(
-                                (item) => html`
-                                  <div>
-                                    ${item.name} (qty: ${item.quantity})
-                                  </div>
-                                `
-                              )}
-                            </div>
-                          </div>
-                        `
-                      : ""}
-                    ${this.extraItems.length > 0
-                      ? html`
-                          <div style="color: #004085;">
-                            <div
-                              style="font-weight: bold; margin-bottom: 0.25rem;"
+                            <small
+                              >Checked at
+                              ${new Date(
+                                content.checkedAt || "1/1/1970"
+                              ).toLocaleString()}</small
                             >
-                              ℹ️ Extra items not in loadout:
-                            </div>
-                            <div style="margin-left: 1rem;">
-                              ${this.extraItems.map(
-                                (item) => html`
-                                  <div>
-                                    ${item.name} (qty: ${item.quantity})
-                                  </div>
-                                `
-                              )}
-                            </div>
+
+                            ${!this.isContentRecordCurrent(content, this.item)
+                              ? html` <p class="warning">Need to reinventory</p> `
+                              : html``}
                           </div>
-                        `
-                      : ""}
-                  </div>
-                `
-              : ""
-          }
-          ${
-            this.contents.length > 0
-              ? html`
-                  <div class="contents-list">
-                    ${this.contents.map((content) => {
-                      const isMissing =
-                        this.selectedLoadout &&
-                        this.missingItems.some((m) => m.id === content.id);
-                      const isExtra =
-                        this.selectedLoadout &&
-                        this.extraItems.some((e) => e.id === content.id);
-                      const className = isMissing
-                        ? "warning"
-                        : isExtra
-                        ? "extra"
-                        : "";
-                      return html`
-                        <div class="content-item ${className}">
-                          <span class="content-item-name">${content.name}</span>
-                        </div>
-                      `;
-                    })}
-                  </div>
-                `
-              : html` <div class="empty-contents">No contents yet</div> `
-          }
-        </div>
+                        `;
+                      })}
+                    </div>
+                  `
+                : html` <div class="empty-contents">No contents yet</div> `
+            }
+          </div>
       </div>
     `;
   }
@@ -744,12 +792,12 @@ export class ObjectInspect extends LitElement {
   }
 
   private recheckInventory() {
-    this.checkLoadoutMismatch();
-    if (this.missingItems.length === 0 && this.extraItems.length === 0) {
-      alert("✓ Inventory matches loadout perfectly!");
-    } else {
-      alert(
-        `Missing: ${this.missingItems.length}, Extra: ${this.extraItems.length}`
+    if (confirm("Mark contents as needing reinventory?")) {
+      updateItemProperty(
+        this.workspaceKey,
+        this.objectId,
+        "needRecheckContentsAfter",
+        new Date().toISOString()
       );
     }
   }

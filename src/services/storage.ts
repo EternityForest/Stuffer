@@ -239,7 +239,24 @@ export async function deleteItem(workspaceKey: string, itemId: string) {
   objectsMap.delete(itemId)
 }
 
-export async function getItem(workspaceKey: string, itemId: string) {
+export interface ItemData {
+  id: string;
+  name: string;
+  title: string;
+  description: string;
+  createdAt: string;
+  imageData: string | null;
+  selectedLoadout: string | null;
+  inContainer: string | null;
+  lastScannedTimestamp: string | null;
+  lastScannedLocation: string | null;
+ // If this is set, it means that any contents that haven't
+    // Been scanned since this date should be rechecked
+  needRecheckContentsAfter: string | null;
+}
+
+export async function getItem(workspaceKey: string, itemId: string):
+  Promise<ItemData> {
   const doc = await getWorkspaceDoc(workspaceKey);
   const objectsMap = doc.getMap("objects") as Y.Map<any>;
   const item = objectsMap.get(itemId) as Y.Map<any>;
@@ -251,11 +268,12 @@ export async function getItem(workspaceKey: string, itemId: string) {
     title: item.get("title") as string,
     description: item.get("description") as string,
     createdAt: item.get("createdAt") as string,
-    imageData: item.get("imageData") as string | undefined,
+    imageData: item.get("imageData") as string | null,
     selectedLoadout: item.get("selectedLoadout") as string | null,
     inContainer: item.get("inContainer")|| '' as string,
     lastScannedTimestamp: item.get("lastScannedTimestamp") as string | null,
     lastScannedLocation: item.get("lastScannedLocation") as string | null,
+    needRecheckContentsAfter: item.get("needRecheckContentsAfter") as string | null
   };
 }
 
@@ -273,7 +291,13 @@ export async function updateItemProperty(
   item.set(property, value);
 }
 
-export async function getItemContents(workspaceKey: string, itemId: string) {
+export interface ItemContentRecord {
+  id: string;
+  name: string;
+  checkedAt: string | null;
+}
+export async function getItemContents(workspaceKey: string, itemId: string):
+  Promise<Array<ItemContentRecord>> {
   const doc = await getWorkspaceDoc(workspaceKey);
   const objectsMap = doc.getMap("objects") as Y.Map<any>;
   const item = objectsMap.get(itemId) as Y.Map<any>;
@@ -287,7 +311,7 @@ export async function getItemContents(workspaceKey: string, itemId: string) {
     item.set("contents", contentsMap);
   }
 
-  const contents: Array<{ id: string; name: string; }> = [];
+  const contents: Array<ItemContentRecord> = [];
 
   for (const id of contentsMap.keys()) {
     try {
@@ -296,12 +320,14 @@ export async function getItemContents(workspaceKey: string, itemId: string) {
         contents.push({
           id,
           name: await lookupItemName(workspaceKey, id),
+          checkedAt: contentsMap.get(id).get("checkedAt") as string
         });
       }
     } catch (e) {
       contents.push({
         id,
         name: "Unknown",
+        checkedAt: null
       });
       console.error(e);
     }
@@ -332,6 +358,7 @@ export async function addItemToContents(
 
   const content = new Y.Map();
   content.set("itemId", itemId);
+  content.set("checkedAt", new Date().toISOString());
 
   contentsMap.set(itemId, content);
   updateItemProperty(workspaceKey, itemId, "inContainer", containerId);
