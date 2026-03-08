@@ -230,7 +230,6 @@ export class QRSheetCreator extends LitElement {
         </div>
         <button @click=${this.print}>Print</button>
         <button @click=${this.saveAsImage}>Save as Image</button>
-
       </div>
 
       <div class="print-container">
@@ -278,11 +277,23 @@ export class QRSheetCreator extends LitElement {
   }
 
   private async saveAsImage() {
-    const element = this.shadowRoot?.querySelector("#sheet-target") as HTMLElement;
+    const element = this.shadowRoot?.querySelector(
+      "#sheet-target"
+    ) as HTMLElement;
     if (!element) return;
 
+    const width = element.clientWidth * 6;
+    const height = element.clientHeight * 6;
+
     try {
-      const dataUrl = await toPng(element);
+      const dataUrl = await toPng(element, {
+        width: width,
+        height: height,
+        style: {
+          transform: "scale(6)",
+          transformOrigin: "top left",
+        },
+      });
       const link = document.createElement("a");
       link.href = dataUrl;
       link.download = `${this.layout?.name || "sheet"}.png`;
