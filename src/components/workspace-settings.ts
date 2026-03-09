@@ -13,6 +13,8 @@ import {
   createCategory,
   deleteCategory,
   getCategories,
+  getDefaultCategory,
+  setDefaultCategory,
 } from "../services/storage.js";
 import { getWorkspaceLocalSettings } from "../services/local-settings.js";
 import { generateUUID } from "../utils/uuid.js";
@@ -68,6 +70,9 @@ export class WorkspaceSettings extends LitElement {
   @state()
   declare showCategoryForm: boolean;
 
+  @state()
+  declare defaultCategory: string;
+
   private statusInterval: number | null = null;
   private fileInput: HTMLInputElement | null = null;
 
@@ -88,12 +93,14 @@ export class WorkspaceSettings extends LitElement {
     this.categories = [];
     this.newCategoryName = "";
     this.showCategoryForm = false;
+    this.defaultCategory = "all";
   }
 
   async connectedCallback() {
     super.connectedCallback();
     await this.loadWorkspaceData();
     await this.loadCategories();
+    await this.loadDefaultCategory();
     this.startStatusPolling();
   }
 
@@ -132,6 +139,17 @@ export class WorkspaceSettings extends LitElement {
     } catch (error) {
       console.error("Failed to load categories:", error);
       this.categories = [];
+    }
+  }
+
+  private async loadDefaultCategory() {
+    if (!this.workspaceKey) return;
+
+    try {
+      this.defaultCategory = await getDefaultCategory(this.workspaceKey);
+    } catch (error) {
+      console.error("Failed to load default category:", error);
+      this.defaultCategory = "all";
     }
   }
 
@@ -261,9 +279,24 @@ export class WorkspaceSettings extends LitElement {
     try {
       await deleteCategory(this.workspaceKey, categoryId);
       await this.loadCategories();
+      // Reset default category if it was deleted
+      if (this.defaultCategory === categoryId) {
+        this.defaultCategory = "all";
+        await setDefaultCategory(this.workspaceKey, "all");
+      }
     } catch (error) {
       console.error("Failed to delete category:", error);
       this.error = "Failed to delete category";
+    }
+  }
+
+  private async handleDefaultCategoryChange(categoryId: string) {
+    try {
+      this.defaultCategory = categoryId;
+      await setDefaultCategory(this.workspaceKey, categoryId);
+    } catch (error) {
+      console.error("Failed to set default category:", error);
+      this.error = "Failed to set default category";
     }
   }
 
@@ -490,6 +523,25 @@ export class WorkspaceSettings extends LitElement {
           ${this.categories.length > 0
             ? html`
                 <div style="margin-bottom: 1rem;">
+                  <div style="margin-bottom: 1rem;">
+                    <label>Default Category for Workspace Browser</label>
+                    <select
+                      .value=${this.defaultCategory}
+                      @change=${(e: Event) =>
+                        this.handleDefaultCategoryChange(
+                          (e.target as HTMLSelectElement).value
+                        )}
+                      style="width: 100%; padding: 0.5rem; border-radius: 4px; border: 1px solid #ddd;"
+                    >
+                      <option value="all">All Items</option>
+                      ${this.categories.map(
+                        (cat) => html`
+                          <option value="${cat.id}">${cat.name}</option>
+                        `
+                      )}
+                    </select>
+                  </div>
+
                   ${this.categories.map(
                     (cat) => html`
                       <div

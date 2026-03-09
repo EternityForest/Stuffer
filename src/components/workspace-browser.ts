@@ -7,6 +7,7 @@ import {
   lookupItemName,
   getCategories,
   getCategoryItemsOverview,
+  getDefaultCategory,
 } from "../services/storage.js";
 
 @customElement("workspace-browser")
@@ -113,9 +114,11 @@ export class WorkspaceBrowser extends LitElement {
 
     try {
       this.categories = await getCategories(this.workspaceKey);
+      this.selectedCategory = await getDefaultCategory(this.workspaceKey);
     } catch (error) {
       console.error("Failed to load categories:", error);
       this.categories = [];
+      this.selectedCategory = "all";
     }
   }
 

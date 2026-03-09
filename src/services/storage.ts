@@ -1496,3 +1496,18 @@ export async function getCategoryItemsOverview(
 
   return items;
 }
+
+export async function getDefaultCategory(workspaceKey: string): Promise<string> {
+  const doc = await getWorkspaceDoc(workspaceKey);
+  const metadataMap = doc.getMap("metadata") as Y.Map<any>;
+  return (metadataMap.get("defaultCategory") as string) || "all";
+}
+
+export async function setDefaultCategory(
+  workspaceKey: string,
+  categoryId: string
+): Promise<void> {
+  const doc = await getWorkspaceDoc(workspaceKey);
+  const metadataMap = doc.getMap("metadata") as Y.Map<any>;
+  metadataMap.set("defaultCategory", categoryId);
+}
