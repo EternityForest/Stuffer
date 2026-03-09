@@ -1372,14 +1372,8 @@ export async function createCategory(
   const categoryId = generateItemId();
 
   const category = new Y.Map();
+  category.set("name", categoryName);
   categoriesMap.set(categoryId, category);
-
-  // Store category name in metadata for easier lookup
-  const metadataMap = doc.getMap("metadata") as Y.Map<any>;
-  const categoryNamesMap =
-    (metadataMap.get("categoryNames") as Y.Map<any>) || new Y.Map();
-  categoryNamesMap.set(categoryId, categoryName);
-  metadataMap.set("categoryNames", categoryNamesMap);
 
   return categoryId;
 }
@@ -1391,28 +1385,18 @@ export async function deleteCategory(
   const doc = await getWorkspaceDoc(workspaceKey);
   const categoriesMap = doc.getMap("categories") as Y.Map<any>;
   categoriesMap.delete(categoryId);
-
-  // Also remove from category names
-  const metadataMap = doc.getMap("metadata") as Y.Map<any>;
-  const categoryNamesMap = metadataMap.get("categoryNames") as Y.Map<any>;
-  if (categoryNamesMap) {
-    categoryNamesMap.delete(categoryId);
-  }
 }
 
 export async function getCategories(
   workspaceKey: string
 ): Promise<Array<{ id: string; name: string }>> {
   const doc = await getWorkspaceDoc(workspaceKey);
-  const metadataMap = doc.getMap("metadata") as Y.Map<any>;
-  const categoryNamesMap = metadataMap.get("categoryNames") as Y.Map<any>;
+  const categoriesMap = doc.getMap("categories") as Y.Map<any>;
 
   const categories: Array<{ id: string; name: string }> = [];
 
-  if (categoryNamesMap) {
-    for (const [id, name] of categoryNamesMap) {
-      categories.push({ id, name: name as string });
-    }
+  for (const [id, data] of categoriesMap) {
+    categories.push({ id, name: data.get("name") as string });
   }
 
   return categories;
@@ -1462,8 +1446,6 @@ export async function getItemCategories(
 ): Promise<Array<{ id: string; name: string }>> {
   const doc = await getWorkspaceDoc(workspaceKey);
   const categoriesMap = doc.getMap("categories") as Y.Map<any>;
-  const metadataMap = doc.getMap("metadata") as Y.Map<any>;
-  const categoryNamesMap = metadataMap.get("categoryNames") as Y.Map<any>;
 
   const itemCategories: Array<{ id: string; name: string }> = [];
 
@@ -1472,7 +1454,7 @@ export async function getItemCategories(
     const itemsMap = categoryMap.get("items") as Y.Map<any> | undefined;
 
     if (itemsMap && itemsMap.has(itemId)) {
-      const name = (categoryNamesMap?.get(categoryId) as string) || "Unknown";
+      const name = category.get("name") as string || "Unknown";
       itemCategories.push({ id: categoryId, name });
     }
   }
@@ -1502,18 +1484,15 @@ export async function getCategoryItemsOverview(
   }> = [];
 
   for (const [id, _dummy] of itemsMap) {
-
     const item = await getItem(workspaceKey, id);
     items.push({
       id,
       name: item.title as string,
       createdAt: item.createdAt as string,
       inContainer:
-        item.inContainer &&
-        ((await lookupItemName(
-          workspaceKey,
-          item.inContainer
-        )) as string) || undefined,
+        (item.inContainer &&
+          ((await lookupItemName(workspaceKey, item.inContainer)) as string)) ||
+        undefined,
     });
   }
 

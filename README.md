@@ -12,6 +12,15 @@ There is no backend, the entire app runs in the browser.
 
 Items are unique tagged things.  They can have other items as contents.  An item can only be in one place.
 
+### Aliases
+
+On the aliases manager screen, you can assign more than one QR code to an item.
+
+### Categories
+
+In the workspace settings, you can create any number of categories. Items can be added to any number of categories.
+
+
 ### Amounts
 
 If an item is a bulk container, you can add amount updates
