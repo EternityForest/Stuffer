@@ -16,6 +16,7 @@ import {
   getCategories,
   getCategoryItemsOverview,
 } from "../services/storage.js";
+import type { ItemData } from "../services/storage.js";
 import jsQR from "jsqr";
 
 @customElement("list-browser")
@@ -681,8 +682,13 @@ export class ListBrowser extends LitElement {
   private async handleQRScan(qrData: string) {
     try {
       const resolvedId = await resolveItemId(this.workspaceKey, qrData);
-      const item = await getItem(this.workspaceKey, resolvedId);
+      let item: ItemData | null = null;
+      try{
+      item = await getItem(this.workspaceKey, qrData);
+      }
+      catch (error) {
 
+      }
       if (!item) {
         this.showToast("QR code not found", "error");
         if (this.isScanning && this.videoElement) {

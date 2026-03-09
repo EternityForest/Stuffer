@@ -1301,7 +1301,8 @@ export async function updateLastScanned(
 ) {
   const doc = await getWorkspaceDoc(workspaceKey);
   const objectsMap = doc.getMap("objects") as Y.Map<any>;
-  const item = objectsMap.get(itemId) as Y.Map<any>;
+  const  resolvedId= await resolveItemId(workspaceKey, itemId);
+  const item = objectsMap.get(resolvedId) as Y.Map<any>;
   if (!item) return;
 
   const prevLastScanned = item.get("lastScannedAt") as string | null;

@@ -16,6 +16,11 @@ Items are unique tagged things.  They can have other items as contents.  An item
 
 On the aliases manager screen, you can assign more than one QR code to an item.
 
+### NFC tags
+
+NFC tags are supported on Android Chrome only.  Any tag should work, it just uses the builtin serial number.
+
+
 ### Categories
 
 In the workspace settings, you can create any number of categories. Items can be added to any number of categories.

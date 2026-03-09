@@ -40,7 +40,7 @@ export class WorkspaceBrowser extends LitElement {
   declare selectedCategory: string;
 
   @state()
-  declare ndef: NDEFReader| null;
+  declare ndef: NDEFReader | null;
 
   private nfcAbort: AbortController | null = null;
 
@@ -54,10 +54,10 @@ export class WorkspaceBrowser extends LitElement {
     this.searchQuery = "";
     this.objects = [];
     this.categories = [];
-    this.selectedCategory = "all";
+    this.selectedCategory = "";
 
-    this.nfcAbort = globalThis.nfcabort as AbortController || null
-    this.ndef = globalThis.nfcreader || null
+    this.nfcAbort = (globalThis.nfcabort as AbortController) || null;
+    this.ndef = globalThis.nfcreader || null;
   }
 
   connectedCallback() {
@@ -72,36 +72,45 @@ export class WorkspaceBrowser extends LitElement {
     this.cleanupYjsListener();
   }
 
-
   private async toggleNfc() {
-
-
-    if (this.nfcAbort){
+    if (this.nfcAbort) {
       this.nfcAbort.abort();
       this.nfcAbort = null;
       this.ndef = null;
-      globalThis.nfcreader = null
-      globalThis.nfcabort = null
-      return
-    }  
-    
-    this.nfcAbort = new AbortController();
-    globalThis.nfcabort = this.nfcAbort
+      globalThis.nfcreader = null;
+      globalThis.nfcabort = null;
+      alert("NFC scanning stopped");
+          this.requestUpdate();
 
-    const ndef = new NDEFReader();
-    await ndef.scan();
+      return;
+    }
+    try {
+      this.nfcAbort = new AbortController();
+      globalThis.nfcabort = this.nfcAbort;
 
-    ndef.addEventListener("readingerror", () => {
-      console.error("Argh! Cannot read data from the NFC tag. Try another one?");
-    });
+      const ndef = new NDEFReader();
+      await ndef.scan();
 
-    ndef.addEventListener("reading", ({ _message, serialNumber }) => {
-      this.dispatchEvent(
-        new CustomEvent<{ qrData: string }>("globalTagScan", {
-          detail: { qrData: "nfc-id://" + serialNumber },
-        })
-      );
-    });
+      ndef.addEventListener("readingerror", () => {
+        alert("Argh! Cannot read data from the NFC tag. Try another one?");
+        console.error(
+          "Argh! Cannot read data from the NFC tag."
+        );
+      });
+
+      ndef.addEventListener("reading", ({ _message, serialNumber }) => {
+        globalThis.dispatchEvent(
+          new CustomEvent<{ qrData: string }>("globalTagScan", {
+            detail: { qrData: "nfc-id://" + serialNumber },
+          })
+        );
+      });
+    } catch (e) {
+      alert(e);
+      console.error(e);
+    }
+
+    this.requestUpdate();
   }
 
   private async setupYjsListener() {
@@ -131,18 +140,21 @@ export class WorkspaceBrowser extends LitElement {
 
   private async loadItems() {
     if (!this.workspaceKey) return;
-
+      
+    if(this.selectedCategory === ""){
+    this.selectedCategory = await getDefaultCategory(this.workspaceKey);
+    }
     try {
-
-      if(this.selectedCategory !== "all") {
-        this.objects = await getCategoryItemsOverview(this.workspaceKey, this.selectedCategory);
+      if (this.selectedCategory !== "all") {
+        this.objects = await getCategoryItemsOverview(
+          this.workspaceKey,
+          this.selectedCategory
+        );
+      } else {
+        this.objects = await getItemsOverview(this.workspaceKey);
       }
-      else{
-      this.objects = await getItemsOverview(this.workspaceKey);
-      }
-      this.workspaceName = (await getWorkspacesMap()).get(
-        this.workspaceKey
-      )?.name as string;
+      this.workspaceName = (await getWorkspacesMap()).get(this.workspaceKey)
+        ?.name as string;
     } catch (error) {
       console.error("Failed to load items:", error);
       this.objects = [];
@@ -154,7 +166,6 @@ export class WorkspaceBrowser extends LitElement {
 
     try {
       this.categories = await getCategories(this.workspaceKey);
-      this.selectedCategory = await getDefaultCategory(this.workspaceKey);
     } catch (error) {
       console.error("Failed to load categories:", error);
       this.categories = [];
@@ -163,14 +174,15 @@ export class WorkspaceBrowser extends LitElement {
   }
 
   updated(changedProperties: Map<string, any>) {
-    if (changedProperties.has("workspaceKey")
-    || changedProperties.has("selectedCategory")) {
+    if (
+      changedProperties.has("workspaceKey") ||
+      changedProperties.has("selectedCategory")
+    ) {
       this.loadItems();
     }
   }
 
   render() {
-
     const filteredObjects = this.objects.filter((obj) =>
       obj.name.toLowerCase().includes(this.searchQuery.toLowerCase())
     );
@@ -191,9 +203,12 @@ export class WorkspaceBrowser extends LitElement {
         <button @click=${() => this.navigateToQRSheets()}>QR Sheets</button>
         <button @click=${() => this.navigateToLoadouts()}>Loadouts</button>
         <button @click=${() => this.navigateToSettings()}>Settings</button>
-        <button @click=${() => this.toggleNfc()}
-        class="${this.nfcAbort ? "success" : ""}"
-        >NFC</button>
+        <button
+          @click=${() => this.toggleNfc()}
+          class="${this.nfcAbort ? "highlight" : ""}"
+        >
+          NFC
+        </button>
         <button @click=${() => this.dispatchNavigate("workspace-selector")}>
           Back
         </button>

@@ -5,6 +5,7 @@ import {
   getItem,
   deleteItem,
   updateLastScanned,
+  ItemData,
 } from "../services/storage.js";
 import jsQR from "jsqr";
 
@@ -268,8 +269,13 @@ export class AddRemoveItem extends LitElement {
 
   private async handleAddMode(qrData: string) {
     try {
-      const existingItem = await getItem(this.workspaceKey, qrData);
+      let existingItem: ItemData | null = null;
+      try{
+      existingItem = await getItem(this.workspaceKey, qrData);
+      }
+      catch (error) {
 
+      }
       if (existingItem) {
         // Item already exists, just show toast
         this.showToast(`✓ ${existingItem.name} (already exists)`, "info");
