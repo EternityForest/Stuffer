@@ -1,13 +1,19 @@
 import { LitElement, html } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
-import { getItemsOverview, getWorkspaceDoc, getWorkspacesMap, lookupItemName } from "../services/storage.js";
+import {
+  getItemsOverview,
+  getWorkspaceDoc,
+  getWorkspacesMap,
+  lookupItemName,
+  getCategories,
+  getCategoryItemsOverview,
+} from "../services/storage.js";
 
 @customElement("workspace-browser")
 export class WorkspaceBrowser extends LitElement {
   override createRenderRoot() {
     return this;
   }
-
 
   @property()
   declare workspaceName: string;
@@ -19,9 +25,18 @@ export class WorkspaceBrowser extends LitElement {
   declare searchQuery: string;
 
   @state()
-  declare objects: Array<{ id: string; name: string; createdAt: string,
-    inContainer?: string
-   }>;
+  declare objects: Array<{
+    id: string;
+    name: string;
+    createdAt: string;
+    inContainer?: string;
+  }>;
+
+  @state()
+  declare categories: Array<{ id: string; name: string }>;
+
+  @state()
+  declare selectedCategory: string;
 
   private updateListener: ((update: Uint8Array, origin: any) => void) | null =
     null;
@@ -32,11 +47,14 @@ export class WorkspaceBrowser extends LitElement {
     this.workspaceKey = "";
     this.searchQuery = "";
     this.objects = [];
+    this.categories = [];
+    this.selectedCategory = "all";
   }
 
   connectedCallback() {
     super.connectedCallback();
     this.loadItems();
+    this.loadCategories();
     this.setupYjsListener();
   }
 
@@ -46,16 +64,16 @@ export class WorkspaceBrowser extends LitElement {
   }
 
   private async setupYjsListener() {
-      try {
-        const yDoc = await getWorkspaceDoc(this.workspaceKey);
-        this.updateListener = () => {
-          this.loadItems();
-          this.requestUpdate();
-        };
-        yDoc.on("update", this.updateListener);
-      } catch (error) {
-        console.error("Failed to subscribe to Yjs updates:", error);
-      }
+    try {
+      const yDoc = await getWorkspaceDoc(this.workspaceKey);
+      this.updateListener = () => {
+        this.loadItems();
+        this.requestUpdate();
+      };
+      yDoc.on("update", this.updateListener);
+    } catch (error) {
+      console.error("Failed to subscribe to Yjs updates:", error);
+    }
   }
 
   private async cleanupYjsListener() {
@@ -74,30 +92,49 @@ export class WorkspaceBrowser extends LitElement {
     if (!this.workspaceKey) return;
 
     try {
-      this.objects = await getItemsOverview(this.workspaceKey);
 
-      this.workspaceName = (await getWorkspacesMap()).get(this.workspaceKey)?.name
+      if(this.selectedCategory !== "all") {
+        this.objects = await getCategoryItemsOverview(this.workspaceKey, this.selectedCategory);
+      }
+      else{
+      this.objects = await getItemsOverview(this.workspaceKey);
+      }
+      this.workspaceName = (await getWorkspacesMap()).get(
+        this.workspaceKey
+      )?.name;
     } catch (error) {
       console.error("Failed to load items:", error);
       this.objects = [];
     }
   }
 
+  private async loadCategories() {
+    if (!this.workspaceKey) return;
+
+    try {
+      this.categories = await getCategories(this.workspaceKey);
+    } catch (error) {
+      console.error("Failed to load categories:", error);
+      this.categories = [];
+    }
+  }
+
   updated(changedProperties: Map<string, any>) {
-    if (changedProperties.has("workspaceKey")) {
+    if (changedProperties.has("workspaceKey")
+    || changedProperties.has("selectedCategory")) {
       this.loadItems();
     }
   }
 
   render() {
+
     const filteredObjects = this.objects.filter((obj) =>
       obj.name.toLowerCase().includes(this.searchQuery.toLowerCase())
     );
-    
 
     return html`
       <div class="tool-bar">
-      <p>Stuffer: ${this.workspaceName}</p>
+        <p>Stuffer: ${this.workspaceName}</p>
         <input
           type="text"
           class="search-bar"
@@ -115,16 +152,44 @@ export class WorkspaceBrowser extends LitElement {
           Back
         </button>
       </div>
+
+      ${this.categories.length > 0
+        ? html`
+            <div class="tool-bar">
+              <button
+                @click=${() => (this.selectedCategory = "all")}
+                class="${this.selectedCategory === "all" ? "highlight" : ""}"
+              >
+                All Items
+              </button>
+              ${this.categories.map(
+                (cat) => html`
+                  <button
+                    @click=${() => (this.selectedCategory = cat.id)}
+                    class="${this.selectedCategory === cat.id
+                      ? "highlight"
+                      : ""}"
+                  >
+                    ${cat.name}
+                  </button>
+                `
+              )}
+            </div>
+          `
+        : ""}
+
       <div class="flex-row gaps padding">
         ${filteredObjects.map(
           (obj) => html`
-            <div class="card w-sm-half" @click=${() => this.selectObject(obj.id)}>
+            <div
+              class="card w-sm-half"
+              @click=${() => this.selectObject(obj.id)}
+            >
               <h3>${obj.name}</h3>
               <div class="meta">
-              ${obj.inContainer ? html`<div class="in-container">
-              At ${obj.inContainer}
-              
-              </div>` : ""}
+                ${obj.inContainer
+                  ? html`<div class="in-container">At ${obj.inContainer}</div>`
+                  : ""}
               </div>
             </div>
           `

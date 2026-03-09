@@ -13,6 +13,8 @@ import {
   getWorkspaceDoc,
   getItem,
   resolveItemId,
+  getCategories,
+  getCategoryItemsOverview,
 } from "../services/storage.js";
 import jsQR from "jsqr";
 
@@ -62,6 +64,12 @@ export class ListBrowser extends LitElement {
   @state()
   declare containerName: string;
 
+  @state()
+  declare categories: Array<{ id: string; name: string }>;
+
+  @state()
+  declare selectedCategory: string;
+
   private videoElement: HTMLVideoElement | null = null;
   private scanningInterval: number | null = null;
   private updateListener: ((update: Uint8Array, origin: any) => void) | null =
@@ -87,6 +95,8 @@ export class ListBrowser extends LitElement {
     this.containerFilter = "";
     this.containerList = [];
     this.containerName = "";
+    this.categories = [];
+    this.selectedCategory = "all";
   }
 
   disconnectedCallback() {
@@ -98,6 +108,7 @@ export class ListBrowser extends LitElement {
   connectedCallback() {
     super.connectedCallback();
     this.loadItems();
+    this.loadCategories();
     this.setupYjsListener();
   }
 
@@ -131,7 +142,8 @@ export class ListBrowser extends LitElement {
       changedProperties.has("workspaceKey") ||
       changedProperties.has("mode") ||
       changedProperties.has("containerId") ||
-      changedProperties.has("loadoutId")
+      changedProperties.has("loadoutId") ||
+      changedProperties.has("selectedCategory")
     ) {
       this.loadItems();
       if (changedProperties.has("containerId") && !this.selectingContainer) {
@@ -162,7 +174,14 @@ export class ListBrowser extends LitElement {
         this.items = loadout.contents;
       } else {
         // For add-to-contents and create-loadout modes, load all items in workspace
-        this.items = await getItemsOverview(this.workspaceKey);
+        if (this.selectedCategory !== "all") {
+          this.items = await getCategoryItemsOverview(
+            this.workspaceKey,
+            this.selectedCategory
+          );
+        } else {
+          this.items = await getItemsOverview(this.workspaceKey);
+        }
       }
     } catch (error) {
       console.error("Failed to load items:", error);
@@ -179,6 +198,17 @@ export class ListBrowser extends LitElement {
     } catch (error) {
       console.error("Failed to load container name:", error);
       this.containerName = "";
+    }
+  }
+
+  private async loadCategories() {
+    if (!this.workspaceKey) return;
+
+    try {
+      this.categories = await getCategories(this.workspaceKey);
+    } catch (error) {
+      console.error("Failed to load categories:", error);
+      this.categories = [];
     }
   }
 
@@ -239,6 +269,30 @@ export class ListBrowser extends LitElement {
                   Select Different Container
                 </button>
               </div>
+            </div>
+          `
+        : ""}
+      ${this.categories.length > 0
+        ? html`
+            <div class="tool-bar">
+              <button
+                @click=${() => (this.selectedCategory = "all")}
+                class="${this.selectedCategory === "all" ? "highlight" : ""}"
+              >
+                All Items
+              </button>
+              ${this.categories.map(
+                (cat) => html`
+                  <button
+                    @click=${() => (this.selectedCategory = cat.id)}
+                    class="${this.selectedCategory === cat.id
+                      ? "highlight"
+                      : ""}"
+                  >
+                    ${cat.name}
+                  </button>
+                `
+              )}
             </div>
           `
         : ""}
@@ -638,7 +692,11 @@ export class ListBrowser extends LitElement {
 
       if (this.mode === "add-to-contents") {
         // Add the found item to container
-        await addItemToContents(this.workspaceKey, this.containerId, resolvedId);
+        await addItemToContents(
+          this.workspaceKey,
+          this.containerId,
+          resolvedId
+        );
 
         this.showToast(`✓ Added ${itemName}`, "success");
       } else if (this.mode === "remove-from-contents") {

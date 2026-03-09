@@ -10,6 +10,9 @@ import {
   exportWorkspaceState,
   importWorkspaceState,
   downloadWorkspaceFile,
+  createCategory,
+  deleteCategory,
+  getCategories,
 } from "../services/storage.js";
 import { getWorkspaceLocalSettings } from "../services/local-settings.js";
 import { generateUUID } from "../utils/uuid.js";
@@ -56,6 +59,15 @@ export class WorkspaceSettings extends LitElement {
   @state()
   declare importSuccess: string | null;
 
+  @state()
+  declare categories: Array<{ id: string; name: string }>;
+
+  @state()
+  declare newCategoryName: string;
+
+  @state()
+  declare showCategoryForm: boolean;
+
   private statusInterval: number | null = null;
   private fileInput: HTMLInputElement | null = null;
 
@@ -73,11 +85,15 @@ export class WorkspaceSettings extends LitElement {
     this.signalingServer = "wss://y-webrtc-ckynwnzncc.now.sh";
     this.error = null;
     this.importSuccess = null;
+    this.categories = [];
+    this.newCategoryName = "";
+    this.showCategoryForm = false;
   }
 
   async connectedCallback() {
     super.connectedCallback();
     await this.loadWorkspaceData();
+    await this.loadCategories();
     this.startStatusPolling();
   }
 
@@ -105,6 +121,17 @@ export class WorkspaceSettings extends LitElement {
     } catch (error) {
       console.error("Failed to load workspace data:", error);
       this.error = "Failed to load workspace data";
+    }
+  }
+
+  private async loadCategories() {
+    if (!this.workspaceKey) return;
+
+    try {
+      this.categories = await getCategories(this.workspaceKey);
+    } catch (error) {
+      console.error("Failed to load categories:", error);
+      this.categories = [];
     }
   }
 
@@ -207,6 +234,36 @@ export class WorkspaceSettings extends LitElement {
     } catch (error) {
       console.error("Failed to reconnect WebRTC:", error);
       this.error = "Failed to reconnect";
+    }
+  }
+
+  private async handleCreateCategory() {
+    const name = this.newCategoryName.trim();
+    if (!name) {
+      this.error = "Category name cannot be empty";
+      return;
+    }
+
+    try {
+      await createCategory(this.workspaceKey, name);
+      this.newCategoryName = "";
+      this.showCategoryForm = false;
+      await this.loadCategories();
+    } catch (error) {
+      console.error("Failed to create category:", error);
+      this.error = "Failed to create category";
+    }
+  }
+
+  private async handleDeleteCategory(categoryId: string) {
+    if (!confirm("Delete this category?")) return;
+
+    try {
+      await deleteCategory(this.workspaceKey, categoryId);
+      await this.loadCategories();
+    } catch (error) {
+      console.error("Failed to delete category:", error);
+      this.error = "Failed to delete category";
     }
   }
 
@@ -426,6 +483,74 @@ export class WorkspaceSettings extends LitElement {
                   <button @click=${() => this.reconnect()}>Reconnect</button>
                 `}
           </div>
+        </div>
+
+        <div class="section">
+          <h3>Categories</h3>
+          ${this.categories.length > 0
+            ? html`
+                <div style="margin-bottom: 1rem;">
+                  ${this.categories.map(
+                    (cat) => html`
+                      <div
+                        style="display: flex; justify-content: space-between; align-items: center; padding: 0.5rem; background: #f5f5f5; border-radius: 4px; margin-bottom: 0.5rem;"
+                      >
+                        <span>${cat.name}</span>
+                        <button
+                          class="danger"
+                          @click=${() => this.handleDeleteCategory(cat.id)}
+                          style="padding: 4px 8px; font-size: 0.9rem;"
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    `
+                  )}
+                </div>
+              `
+            : html`
+                <div style="padding: 0.75rem; background: #f9f9f9; border-radius: 4px; margin-bottom: 1rem; color: #666;">
+                  No categories yet
+                </div>
+              `}
+
+          ${this.showCategoryForm
+            ? html`
+                <div class="stacked-form">
+                  <label
+                    >Category Name
+                    <input
+                      type="text"
+                      .value=${this.newCategoryName}
+                      @input=${(e: Event) => {
+                        this.newCategoryName = (
+                          e.target as HTMLInputElement
+                        ).value;
+                      }}
+                      placeholder="Enter category name"
+                    />
+                  </label>
+                  <div class="tool-bar">
+                    <button @click=${() => this.handleCreateCategory()}>
+                      Create
+                    </button>
+                    <button
+                      class="danger"
+                      @click=${() => this.showCategoryForm = false}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              `
+            : html`
+                <button
+                  @click=${() => this.showCategoryForm = true}
+                  style="width: 100%;"
+                >
+                  Add Category
+                </button>
+              `}
         </div>
 
         <div class="section">

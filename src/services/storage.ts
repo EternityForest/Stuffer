@@ -136,6 +136,7 @@ export async function createWorkspace(name: string) {
   doc.getMap("objects"); // Initialize objects map
   doc.getMap("loadouts"); // Initialize loadouts map
   doc.getMap("tagAliases"); // Initialize tagAliases map
+  doc.getMap("categories"); // Initialize categories map
 
   metadataMap.set("name", name);
   metadataMap.set("syncRoomKey", workspaceKey);
@@ -258,7 +259,6 @@ export interface ItemData {
   // Been scanned since this date should be rechecked
   needRecheckContentsAfter: string | null;
 }
-
 
 // Find real item id from alias
 export async function resolveItemId(
@@ -1360,4 +1360,162 @@ export function downloadWorkspaceFile(
 
   // Clean up the URL object
   URL.revokeObjectURL(url);
+}
+
+// Category management functions
+export async function createCategory(
+  workspaceKey: string,
+  categoryName: string
+): Promise<string> {
+  const doc = await getWorkspaceDoc(workspaceKey);
+  const categoriesMap = doc.getMap("categories") as Y.Map<any>;
+  const categoryId = generateItemId();
+
+  const category = new Y.Map();
+  categoriesMap.set(categoryId, category);
+
+  // Store category name in metadata for easier lookup
+  const metadataMap = doc.getMap("metadata") as Y.Map<any>;
+  const categoryNamesMap =
+    (metadataMap.get("categoryNames") as Y.Map<any>) || new Y.Map();
+  categoryNamesMap.set(categoryId, categoryName);
+  metadataMap.set("categoryNames", categoryNamesMap);
+
+  return categoryId;
+}
+
+export async function deleteCategory(
+  workspaceKey: string,
+  categoryId: string
+): Promise<void> {
+  const doc = await getWorkspaceDoc(workspaceKey);
+  const categoriesMap = doc.getMap("categories") as Y.Map<any>;
+  categoriesMap.delete(categoryId);
+
+  // Also remove from category names
+  const metadataMap = doc.getMap("metadata") as Y.Map<any>;
+  const categoryNamesMap = metadataMap.get("categoryNames") as Y.Map<any>;
+  if (categoryNamesMap) {
+    categoryNamesMap.delete(categoryId);
+  }
+}
+
+export async function getCategories(
+  workspaceKey: string
+): Promise<Array<{ id: string; name: string }>> {
+  const doc = await getWorkspaceDoc(workspaceKey);
+  const metadataMap = doc.getMap("metadata") as Y.Map<any>;
+  const categoryNamesMap = metadataMap.get("categoryNames") as Y.Map<any>;
+
+  const categories: Array<{ id: string; name: string }> = [];
+
+  if (categoryNamesMap) {
+    for (const [id, name] of categoryNamesMap) {
+      categories.push({ id, name: name as string });
+    }
+  }
+
+  return categories;
+}
+
+export async function addItemToCategory(
+  workspaceKey: string,
+  categoryId: string,
+  itemId: string
+): Promise<void> {
+  const doc = await getWorkspaceDoc(workspaceKey);
+  const categoriesMap = doc.getMap("categories") as Y.Map<any>;
+  const category = categoriesMap.get(categoryId) as Y.Map<any>;
+
+  if (!category) throw new Error("Category not found");
+
+  const itemsMap = category.get("items") as Y.Map<any> | undefined;
+  if (!itemsMap) {
+    const newMap = new Y.Map();
+    newMap.set(itemId, true);
+    category.set("items", newMap);
+  } else {
+    itemsMap.set(itemId, true);
+  }
+}
+
+export async function removeItemFromCategory(
+  workspaceKey: string,
+  categoryId: string,
+  itemId: string
+): Promise<void> {
+  const doc = await getWorkspaceDoc(workspaceKey);
+  const categoriesMap = doc.getMap("categories") as Y.Map<any>;
+  const category = categoriesMap.get(categoryId) as Y.Map<any>;
+
+  if (!category) throw new Error("Category not found");
+
+  const itemsMap = category.get("items") as Y.Map<any> | undefined;
+  if (itemsMap) {
+    itemsMap.delete(itemId);
+  }
+}
+
+export async function getItemCategories(
+  workspaceKey: string,
+  itemId: string
+): Promise<Array<{ id: string; name: string }>> {
+  const doc = await getWorkspaceDoc(workspaceKey);
+  const categoriesMap = doc.getMap("categories") as Y.Map<any>;
+  const metadataMap = doc.getMap("metadata") as Y.Map<any>;
+  const categoryNamesMap = metadataMap.get("categoryNames") as Y.Map<any>;
+
+  const itemCategories: Array<{ id: string; name: string }> = [];
+
+  for (const [categoryId, category] of categoriesMap) {
+    const categoryMap = category as Y.Map<any>;
+    const itemsMap = categoryMap.get("items") as Y.Map<any> | undefined;
+
+    if (itemsMap && itemsMap.has(itemId)) {
+      const name = (categoryNamesMap?.get(categoryId) as string) || "Unknown";
+      itemCategories.push({ id: categoryId, name });
+    }
+  }
+
+  return itemCategories;
+}
+
+export async function getCategoryItemsOverview(
+  workspaceKey: string,
+  categoryId: string
+) {
+  const doc = await getWorkspaceDoc(workspaceKey);
+  const categoriesMap = doc.getMap("categories") as Y.Map<any>;
+  const category = categoriesMap.get(categoryId) as Y.Map<any>;
+
+  if (!category) throw new Error("Category not found");
+
+  const itemsMap = category.get("items") as Y.Map<any> | undefined;
+
+  if (!itemsMap) return [];
+
+  const items: Array<{
+    id: string;
+    name: string;
+    createdAt: string;
+    inContainer?: string;
+  }> = [];
+
+  for (const [id, _dummy] of itemsMap) {
+
+    const item = await getItem(workspaceKey, id);
+    items.push({
+      id,
+      name: item.title as string,
+      createdAt: item.createdAt as string,
+      inContainer:
+        item.inContainer &&
+        ((await lookupItemName(
+          workspaceKey,
+          item.inContainer
+        )) as string) || undefined,
+    });
+  }
+
+  return items;
 }

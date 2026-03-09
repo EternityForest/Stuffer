@@ -15,6 +15,10 @@ import {
   calculateCurrentAmount,
   getWorkspaceDoc,
   lookupItemName,
+  getCategories,
+  getItemCategories,
+  addItemToCategory,
+  removeItemFromCategory,
 } from "../services/storage.js";
 
 import type { ItemData, ItemContentRecord } from "../services/storage.js";
@@ -103,6 +107,12 @@ export class ObjectInspect extends LitElement {
   @state()
   declare showAliasEditor: boolean;
 
+  @state()
+  declare categories: Array<{ id: string; name: string }>;
+
+  @state()
+  declare itemCategories: Array<{ id: string; name: string }>;
+
   private updateListener: ((update: Uint8Array, origin: any) => void) | null =
     null;
 
@@ -143,6 +153,8 @@ export class ObjectInspect extends LitElement {
     this.inContainer = null;
     this.locationTitle = "";
     this.showAliasEditor = false;
+    this.categories = [];
+    this.itemCategories = [];
 
     this.item = null;
   }
@@ -150,6 +162,7 @@ export class ObjectInspect extends LitElement {
   connectedCallback() {
     super.connectedCallback();
     this.loadItem();
+    this.loadCategories();
     this.setupYjsListener();
   }
 
@@ -346,6 +359,35 @@ export class ObjectInspect extends LitElement {
       console.error("Failed to load amount data:", error);
       this.amountUpdates = [];
       this.currentAmount = null;
+    }
+  }
+
+  private async loadCategories() {
+    if (!this.workspaceKey) return;
+
+    try {
+      this.categories = await getCategories(this.workspaceKey);
+      this.itemCategories = await getItemCategories(
+        this.workspaceKey,
+        this.objectId
+      );
+    } catch (error) {
+      console.error("Failed to load categories:", error);
+      this.categories = [];
+      this.itemCategories = [];
+    }
+  }
+
+  private async handleCategoryToggle(categoryId: string, isChecked: boolean) {
+    try {
+      if (isChecked) {
+        await addItemToCategory(this.workspaceKey, categoryId, this.objectId);
+      } else {
+        await removeItemFromCategory(this.workspaceKey, categoryId, this.objectId);
+      }
+      await this.loadCategories();
+    } catch (error) {
+      console.error("Failed to update category:", error);
     }
   }
 
@@ -616,7 +658,7 @@ export class ObjectInspect extends LitElement {
 
           <h3>Location</h3>
           <p>${this.inContainer ? "In Container " + this.locationTitle : ""}</p>
-          
+
           ${
             this.lastScannedLocation
               ? html`
@@ -631,6 +673,32 @@ export class ObjectInspect extends LitElement {
                 `
               : ""
           }
+
+          <details style="margin: 1rem 0; padding: 1rem; background: #f9f9f9; border-radius: 4px; border: 1px solid #eee;">
+            <summary style="cursor: pointer; font-weight: 500;">Categories (${this.itemCategories.length})</summary>
+            <div style="margin-top: 1rem;">
+              ${this.categories.length > 0
+                ? html`
+                    ${this.categories.map(
+                      (cat) => html`
+                        <label style="display: block; margin-bottom: 0.5rem; cursor: pointer;">
+                          <input
+                            type="checkbox"
+                            ?checked=${this.itemCategories.some((ic) => ic.id === cat.id)}
+                            @change=${(e: Event) =>
+                              this.handleCategoryToggle(
+                                cat.id,
+                                (e.target as HTMLInputElement).checked
+                              )}
+                          />
+                          <span style="margin-left: 0.5rem;">${cat.name}</span>
+                        </label>
+                      `
+                    )}
+                  `
+                : html` <div style="color: #666;">No categories available</div> `}
+            </div>
+          </details>
 
           <h3>Contents</h3>    
           
