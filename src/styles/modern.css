@@ -1,0 +1,217 @@
+/* Modern Clean Theme for Barrel.css
+ * Colorful, friendly, accessible design inspired by Bootstrap, Tailwind, and Material Design
+ */
+
+:root {
+  /* Primary colors - vibrant, friendly palette */
+  --primary: #3b82f6;      /* bright blue */
+  --primary-light: #60a5fa;
+  --primary-dark: #1e40af;
+
+  --success: #10b981;      /* emerald green */
+  --success-light: #34d399;
+
+  --warning: #f59e0b;      /* amber */
+  --warning-light: #fbbf24;
+
+  --danger: #ef4444;       /* red */
+  --danger-light: #f87171;
+
+  --info: #06b6d4;         /* cyan */
+  --info-light: #22d3ee;
+
+  /* Neutrals - clean greys */
+  --grey-50: #f9fafb;
+  --grey-100: #f3f4f6;
+  --grey-200: #e5e7eb;
+  --grey-300: #d1d5db;
+  --grey-400: #9ca3af;
+  --grey-500: #6b7280;
+  --grey-600: #4b5563;
+  --grey-700: #374151;
+  --grey-800: #1f2937;
+  --grey-900: #111827;
+
+  /* Legacy compatibility */
+  --black-1: var(--grey-900);
+  --black-2: var(--grey-800);
+  --black-3: var(--grey-700);
+  --black-4: var(--grey-600);
+
+  --grey-1: var(--grey-200);
+  --grey-2: var(--grey-100);
+  --grey-3: var(--grey-50);
+  --grey-4: #ffffff;
+
+  --red: var(--danger);
+  --yellow: var(--warning);
+  --green: var(--success);
+  --teal: var(--info);
+  --blue: var(--primary);
+  --purple: #8b5cf6;       /* violet */
+  --dark-blue: var(--primary-dark);
+
+  /* Semantic variables */
+  --fg: var(--grey-900);
+  --graphical-fg: var(--grey-600);
+  --accent-color: var(--primary);
+
+  --bg: var(--grey-50);
+  --box-bg: #ffffff;
+  --highlight-opacity: 15%;
+
+  /* Control styling */
+  --control-bg: #ffffff;
+  --control-fg: var(--grey-700);
+  --alt-control-bg: var(--grey-100);
+
+  /* Depth and shadows */
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+  --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+
+  --window-box-shadow: var(--shadow-lg);
+  --item-box-shadow: var(--shadow-sm);
+
+  /* 3D effects - subtle gradients */
+  --3d-highlight: rgba(255, 255, 255, 0.8);
+  --3d-shadow: rgba(0, 0, 0, 0.06);
+
+  --concave-shadow: rgba(250, 250, 250, 1);
+
+  --concave-highlight: rgba(255, 255, 255, 1);
+
+
+  --concave-item-box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.05);
+
+  /* Borders */
+  --border-color: var(--grey-200);
+  --border-style: solid;
+  --border-radius: 0.5rem;
+  --border-width: 1px;
+  --border: var(--border-width) var(--border-style) var(--border-color);
+
+  /* Control specifics */
+  --control-height: 2.25rem;
+  --control-border-radius: 0.5rem;
+  --control-border-width: 1px;
+  --control-border-color: var(--grey-300);
+  --control-border: var(--control-border-width) solid var(--control-border-color);
+
+  /* Colors for semantic states */
+  --highlight-color: var(--info);
+  --success-color: var(--success);
+  --warning-color: var(--warning);
+  --danger-color: var(--danger);
+
+  --success-fg: color-mix(in srgb, var(--success-color) 30%, var(--fg));
+  --warning-fg: color-mix(in srgb, var(--warning-color) 30%, var(--fg));
+  --danger-fg: color-mix(in srgb, var(--danger-color) 30%, var(--fg));
+
+  --hover-color: color-mix(in srgb, var(--primary) 12%, var(--control-bg));
+
+  /* Typography */
+  --sans-font: system-ui, -apple-system, sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
+  --serif-font: Iowan Old Style, Apple Garamond, Baskerville, Times New Roman, Droid Serif, Times, Source Serif Pro, serif, Apple Color Emoji, Segoe UI Emoji, Segoe UI Symbol;
+  --mono-font: "Fira Code", Menlo, Consolas, Monaco, Liberation Mono, Lucida Console, monospace;
+
+  --main-font: var(--sans-font);
+  --heading-font: var(--main-font);
+  --control-font: var(--main-font);
+
+  --font-size: 1rem;
+  --line-height: 1.5;
+
+  /* Spacing */
+  --padding: 0.5rem;
+  --gap: 0.75rem;
+  --header-padding: var(--gap);
+
+  /* Table styling */
+  --table-border-strength: 60%;
+  --thin-border: 1px solid var(--border-color);
+
+  /* Scrollbar */
+  --scrollbar-width: 10px;
+
+  /* Text effects */
+  --heading-text-shadow: none;
+  --control-text-shadow: none;
+  --slider-thumb: var(--convex-item-bg);
+}
+
+/* Dark mode */
+@media (prefers-color-scheme: dark) {
+  :root {
+    /* Adjust neutrals for dark mode */
+    --grey-50: var(--grey-900);
+    --grey-100: var(--grey-800);
+    --grey-200: var(--grey-700);
+    --grey-300: var(--grey-600);
+    --grey-400: var(--grey-500);
+    --grey-500: var(--grey-400);
+    --grey-600: var(--grey-300);
+    --grey-700: var(--grey-200);
+    --grey-800: var(--grey-100);
+    --grey-900: #ffffff;
+
+    /* Dark mode colors */
+    --primary: #60a5fa;
+    --primary-light: #93c5fd;
+    --primary-dark: #1e40af;
+
+    --success: #34d399;
+    --warning: #fbbf24;
+    --danger: #f87171;
+    --info: #22d3ee;
+
+    --fg: var(--grey-100);
+    --graphical-fg: var(--grey-400);
+    --accent-color: var(--primary);
+
+    --bg: var(--grey-950);
+    --box-bg: var(--grey-900);
+    --control-bg: var(--grey-800);
+    --alt-control-bg: var(--grey-700);
+
+    --border-color: var(--grey-700);
+    --control-border-color: var(--grey-600);
+
+    --3d-highlight: rgba(255, 255, 255, 0.1);
+    --3d-shadow: rgba(0, 0, 0, 0.3);
+
+    --concave-item-bg: linear-gradient(
+      180deg,
+      rgba(31, 41, 55, 1) 0%,
+      rgba(17, 24, 39, 1) 100%
+    );
+
+    --convex-item-bg: linear-gradient(
+      180deg,
+      rgba(55, 65, 81, 1) 0%,
+      rgba(31, 41, 55, 1) 100%
+    );
+
+    --hover-color: color-mix(in srgb, var(--primary) 20%, var(--control-bg));
+    --window-box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.5);
+    --item-box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+
+    --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.3);
+    --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.4);
+    --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.5);
+  }
+}
+
+@media screen and (max-width: 460px) {
+  :root {
+    --scrollbar-width: 3px;
+    --padding: 0.375rem;
+    --gap: 0.5rem;
+  }
+}
+
+/* Additional dark color definition for legacy support */
+:root {
+  --grey-950: #030712;
+}

@@ -14,7 +14,7 @@ import './components/layout-browser.js';
 import './components/qr-sheet-creator.js';
 
 import './styles/barrel.css';
-import './styles/basic.css';
+import './styles/modern.css';
 
 @customElement('stuffer-app')
 class StufferApp extends LitElement {
