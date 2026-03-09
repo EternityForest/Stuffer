@@ -19,6 +19,7 @@ import {
 
 import type { ItemData, ItemContentRecord } from "../services/storage.js";
 import { compressImage } from "../services/imageCompression.js";
+import "../components/alias-editor.js";
 
 @customElement("object-inspect")
 export class ObjectInspect extends LitElement {
@@ -99,6 +100,9 @@ export class ObjectInspect extends LitElement {
   @state()
   declare editingAmountUpdateId: string | null;
 
+  @state()
+  declare showAliasEditor: boolean;
+
   private updateListener: ((update: Uint8Array, origin: any) => void) | null =
     null;
 
@@ -138,6 +142,7 @@ export class ObjectInspect extends LitElement {
     this.lastScannedTimestamp = null;
     this.inContainer = null;
     this.locationTitle = "";
+    this.showAliasEditor = false;
 
     this.item = null;
   }
@@ -153,10 +158,20 @@ export class ObjectInspect extends LitElement {
     this.cleanupYjsListener();
   }
 
+  private openAliasEditor() {
+    this.showAliasEditor = true;
+  }
+
+  private closeAliasEditor() {
+    this.showAliasEditor = false;
+  }
+
   private beginDelete() {
     if (confirm("Are you sure you want to delete this item?")) {
-      deleteItem(this.workspaceKey, this.objectId);
-      this.goBack();
+      if (this.item) {
+        deleteItem(this.workspaceKey, this.objectId);
+        this.goBack();
+      }
     }
   }
   private async setupYjsListener() {
@@ -437,11 +452,26 @@ export class ObjectInspect extends LitElement {
     return html`
       <div class="tool-bar">
         <h2>Object Details</h2>
+        <button @click=${() => this.openAliasEditor()}>
+          Manage Aliases
+        </button>
         <button @click=${() => this.beginDelete()} class="danger">
           Delete
         </button>
         <button @click=${() => this.goBack()}>Back</button>
       </div>
+
+      ${
+        this.showAliasEditor
+          ? html`
+              <alias-editor
+                .itemId=${this.objectId}
+                .workspaceKey=${this.workspaceKey}
+                @close-alias-editor=${() => this.closeAliasEditor()}
+              ></alias-editor>
+            `
+          : ""
+      }
 
       <div class="stacked-form">
           <label>Title
@@ -696,7 +726,7 @@ export class ObjectInspect extends LitElement {
                               ).toLocaleString()}</small
                             >
 
-                            ${!this.isContentRecordCurrent(content, this.item)
+                            ${this.item && !this.isContentRecordCurrent(content, this.item)
                               ? html` <p class="warning">Need to reinventory</p> `
                               : html``}
                           </div>

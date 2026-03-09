@@ -5,7 +5,6 @@ import {
   getItemContents,
   addItemToContents,
   removeItemFromContents,
-  findItemById,
   createLoadout,
   getLoadout,
   addItemToLoadout,
@@ -13,6 +12,7 @@ import {
   lookupItemName,
   getWorkspaceDoc,
   getItem,
+  resolveItemId,
 } from "../services/storage.js";
 import jsQR from "jsqr";
 
@@ -616,7 +616,8 @@ export class ListBrowser extends LitElement {
 
   private async handleQRScan(qrData: string) {
     try {
-      const item = await findItemById(this.workspaceKey, qrData);
+      const resolvedId = await resolveItemId(this.workspaceKey, qrData);
+      const item = await getItem(this.workspaceKey, resolvedId);
 
       if (!item) {
         this.showToast("QR code not found", "error");
@@ -626,18 +627,18 @@ export class ListBrowser extends LitElement {
         return;
       }
 
-      const itemName = await lookupItemName(this.workspaceKey, qrData);
+      const itemName = await lookupItemName(this.workspaceKey, resolvedId);
 
       if (this.selectingContainer) {
         // In container selection mode, select the scanned container
-        this.selectContainer(qrData, itemName);
+        this.selectContainer(resolvedId, itemName);
         this.stopScanning();
         return;
       }
 
       if (this.mode === "add-to-contents") {
         // Add the found item to container
-        await addItemToContents(this.workspaceKey, this.containerId, qrData);
+        await addItemToContents(this.workspaceKey, this.containerId, resolvedId);
 
         this.showToast(`✓ Added ${itemName}`, "success");
       } else if (this.mode === "remove-from-contents") {
@@ -645,7 +646,7 @@ export class ListBrowser extends LitElement {
         await removeItemFromContents(
           this.workspaceKey,
           this.containerId,
-          qrData
+          resolvedId
         );
         this.showToast(`✓ Removed ${itemName}`, "success");
       }

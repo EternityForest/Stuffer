@@ -101,7 +101,9 @@ export async function getWorkspaceDoc(workspaceKey: string): Promise<Y.Doc> {
   return doc;
 }
 // Export for component listeners
-export async function getWorkspaceDocExported(workspaceKey: string): Promise<Y.Doc> {
+export async function getWorkspaceDocExported(
+  workspaceKey: string
+): Promise<Y.Doc> {
   return getWorkspaceDoc(workspaceKey);
 }
 
@@ -133,6 +135,7 @@ export async function createWorkspace(name: string) {
   const metadataMap = doc.getMap("metadata");
   doc.getMap("objects"); // Initialize objects map
   doc.getMap("loadouts"); // Initialize loadouts map
+  doc.getMap("tagAliases"); // Initialize tagAliases map
 
   metadataMap.set("name", name);
   metadataMap.set("syncRoomKey", workspaceKey);
@@ -172,7 +175,11 @@ export async function deleteWorkspace(key: string) {
   });
 }
 
-export async function addItem(workspaceKey: string, itemName: string, uuid?: string) {
+export async function addItem(
+  workspaceKey: string,
+  itemName: string,
+  uuid?: string
+) {
   const doc = await getWorkspaceDoc(workspaceKey);
   const objectsMap = doc.getMap("objects") as Y.Map<any>;
   const itemId = uuid || generateItemId();
@@ -198,28 +205,25 @@ export async function getItemsOverview(workspaceKey: string) {
     inContainer?: string;
   }> = [];
 
-
-  for(const [id, item] of objectsMap) {
+  for (const [id, item] of objectsMap) {
     items.push({
       id,
       name: item.get("title") as string,
       createdAt: item.get("createdAt") as string,
-      inContainer: item.get("inContainer") && await lookupItemName(workspaceKey, item.get("inContainer")) as string,
+      inContainer:
+        item.get("inContainer") &&
+        ((await lookupItemName(
+          workspaceKey,
+          item.get("inContainer")
+        )) as string),
     });
   }
 
   return items;
 }
 
-export async function findItemById(workspaceKey: string, ulid: string) {
-  const doc = await getWorkspaceDoc(workspaceKey);
-  const objectsMap = doc.getMap("objects") as Y.Map<any>;
-  return objectsMap.get(ulid) as Y.Map<any>;
-}
-
 export async function lookupItemName(workspaceKey: string, itemId: string) {
-  try 
-  {
+  try {
     const item = await getItem(workspaceKey, itemId);
     return item.title;
   } catch (e) {
@@ -236,7 +240,7 @@ export async function deleteItem(workspaceKey: string, itemId: string) {
     await updateItemProperty(workspaceKey, content.id, "inContainer", null);
   }
 
-  objectsMap.delete(itemId)
+  objectsMap.delete(itemId);
 }
 
 export interface ItemData {
@@ -250,30 +254,54 @@ export interface ItemData {
   inContainer: string | null;
   lastScannedTimestamp: string | null;
   lastScannedLocation: string | null;
- // If this is set, it means that any contents that haven't
-    // Been scanned since this date should be rechecked
+  // If this is set, it means that any contents that haven't
+  // Been scanned since this date should be rechecked
   needRecheckContentsAfter: string | null;
 }
 
-export async function getItem(workspaceKey: string, itemId: string):
-  Promise<ItemData> {
+
+// Find real item id from alias
+export async function resolveItemId(
+  workspaceKey: string,
+  itemId: string
+): Promise<string> {
   const doc = await getWorkspaceDoc(workspaceKey);
+  const tagAliasesMap = doc.getMap("tagAliases") as Y.Map<any>;
+  const aliasMap = tagAliasesMap.get(itemId) as Y.Map<any> | undefined;
+  if (aliasMap) {
+    return aliasMap.get("destination") as string;
+  } else {
+    return itemId;
+  }
+}
+
+export async function getItem(
+  workspaceKey: string,
+  itemId: string
+): Promise<ItemData> {
+  const doc = await getWorkspaceDoc(workspaceKey);
+
+  // Resolve alias if it exists
+  let resolvedId = await resolveItemId(workspaceKey, itemId);
+
   const objectsMap = doc.getMap("objects") as Y.Map<any>;
-  const item = objectsMap.get(itemId) as Y.Map<any>;
+  const item = objectsMap.get(resolvedId) as Y.Map<any>;
   if (!item) throw new Error("Item not found");
 
   return {
-    id: itemId,
+    id: resolvedId,
     name: item.get("title") as string,
     title: item.get("title") as string,
     description: item.get("description") as string,
     createdAt: item.get("createdAt") as string,
     imageData: item.get("imageData") as string | null,
     selectedLoadout: item.get("selectedLoadout") as string | null,
-    inContainer: item.get("inContainer")|| '' as string,
+    inContainer: item.get("inContainer") || ("" as string),
     lastScannedTimestamp: item.get("lastScannedTimestamp") as string | null,
     lastScannedLocation: item.get("lastScannedLocation") as string | null,
-    needRecheckContentsAfter: item.get("needRecheckContentsAfter") as string | null
+    needRecheckContentsAfter: item.get("needRecheckContentsAfter") as
+      | string
+      | null,
   };
 }
 
@@ -296,8 +324,10 @@ export interface ItemContentRecord {
   name: string;
   checkedAt: string | null;
 }
-export async function getItemContents(workspaceKey: string, itemId: string):
-  Promise<Array<ItemContentRecord>> {
+export async function getItemContents(
+  workspaceKey: string,
+  itemId: string
+): Promise<Array<ItemContentRecord>> {
   const doc = await getWorkspaceDoc(workspaceKey);
   const objectsMap = doc.getMap("objects") as Y.Map<any>;
   const item = objectsMap.get(itemId) as Y.Map<any>;
@@ -320,14 +350,14 @@ export async function getItemContents(workspaceKey: string, itemId: string):
         contents.push({
           id,
           name: await lookupItemName(workspaceKey, id),
-          checkedAt: contentsMap.get(id).get("checkedAt") as string
+          checkedAt: contentsMap.get(id).get("checkedAt") as string,
         });
       }
     } catch (e) {
       contents.push({
         id,
         name: "Unknown",
-        checkedAt: null
+        checkedAt: null,
       });
       console.error(e);
     }
@@ -339,7 +369,7 @@ export async function getItemContents(workspaceKey: string, itemId: string):
 export async function addItemToContents(
   workspaceKey: string,
   containerId: string,
-  itemId: string,
+  itemId: string
 ) {
   const doc = await getWorkspaceDoc(workspaceKey);
   const objectsMap = doc.getMap("objects") as Y.Map<any>;
@@ -384,7 +414,7 @@ export async function createLoadout(
   workspaceKey: string,
   title: string,
   description: string = "",
-  contents: Array<{ itemId: string;}> = []
+  contents: Array<{ itemId: string }> = []
 ) {
   const doc = await getWorkspaceDoc(workspaceKey);
   const loadoutsMap = doc.getMap("loadouts") as Y.Map<any>;
@@ -425,7 +455,6 @@ export async function saveObjectAsLoadout(
 }
 
 export async function getLoadouts(workspaceKey: string) {
-
   const workspace = await getWorkspaceDoc(workspaceKey);
   if (!workspace) throw new Error("Workspace not found");
 
@@ -459,14 +488,14 @@ export async function getLoadout(workspaceKey: string, loadoutId: string) {
   if (!loadout) throw new Error("Loadout not found");
 
   const contentsMap = loadout.get("contents") as Y.Map<any>;
-  const contents: Array<{ id: string; name: string;}> = [];
+  const contents: Array<{ id: string; name: string }> = [];
 
   for (const [id, _content] of contentsMap) {
     contents.push({
       id,
-      name:await lookupItemName(workspaceKey, id),
+      name: await lookupItemName(workspaceKey, id),
     });
-  };
+  }
 
   return {
     id: loadoutId,
@@ -494,7 +523,7 @@ export async function updateLoadoutProperty(
 export async function addItemToLoadout(
   workspaceKey: string,
   loadoutId: string,
-  itemId: string,
+  itemId: string
 ) {
   const doc = await getWorkspaceDoc(workspaceKey);
   const loadoutsMap = doc.getMap("loadouts") as Y.Map<any>;
@@ -503,7 +532,9 @@ export async function addItemToLoadout(
 
   // Remove item from any other loadouts first
   loadoutsMap.forEach((otherLoadout) => {
-    const otherContentsMap = (otherLoadout as Y.Map<any>).get("contents") as Y.Map<any>;
+    const otherContentsMap = (otherLoadout as Y.Map<any>).get(
+      "contents"
+    ) as Y.Map<any>;
     if (otherContentsMap && otherContentsMap.has(itemId)) {
       otherContentsMap.delete(itemId);
     }
@@ -569,7 +600,7 @@ export async function compareContentsToLoadout(
         extra.push({
           id,
           name: await lookupItemName(workspaceKey, id),
-          quantity: 1
+          quantity: 1,
         });
       }
     }
@@ -579,9 +610,10 @@ export async function compareContentsToLoadout(
         missing.push({
           id,
           name: await lookupItemName(workspaceKey, id),
-          quantity: 1
-      })
-    }}
+          quantity: 1,
+        });
+      }
+    }
 
     return { missing, extra };
   } catch (error) {
@@ -603,7 +635,6 @@ export async function enableWebRTC(
   }
 
   try {
-
     // Use room key from local settings, not from synced workspace
     const localPeerId =
       getWorkspaceLocalSettings(workspaceKey).localPeerId || "";
@@ -681,149 +712,155 @@ function connectToPeer(
 
 function setupConnection(workspaceKey: string, conn: DataConnection) {
   // Get workspace doc asynchronously
-  getWorkspaceDoc(workspaceKey).then((doc) => {
-    // Track this peer as connected
-    if (!connectedPeers.has(workspaceKey)) {
-      connectedPeers.set(workspaceKey, new Set());
-    }
-    connectedPeers.get(workspaceKey)!.add(conn.peer);
-
-    let synced = false;
-
-    // Listen for document updates and sync to this peer
-    const updateHandler = (update: Uint8Array) => {
-      try {
-        if (conn.open) {
-          console.log(
-            `[${workspaceKey}] Sending update to peer ${conn.peer}, size: ${update.length}`
-          );
-          conn.send({
-            type: "sync",
-            data: update,
-          });
-        }
-      } catch (error) {
-        console.error("Failed to send sync message:", error);
+  getWorkspaceDoc(workspaceKey)
+    .then((doc) => {
+      // Track this peer as connected
+      if (!connectedPeers.has(workspaceKey)) {
+        connectedPeers.set(workspaceKey, new Set());
       }
-    };
+      connectedPeers.get(workspaceKey)!.add(conn.peer);
 
-    // Handle incoming messages
-    conn.on("data", (msg: any) => {
-      console.log(
-        `[${workspaceKey}] Received message type: ${msg.type} from peer ${conn.peer}, data type: ${msg.data?.constructor?.name}`
-      );
+      let synced = false;
 
-      if (msg.type === "syncReady") {
+      // Listen for document updates and sync to this peer
+      const updateHandler = (update: Uint8Array) => {
         try {
-          if (doc) {
+          if (conn.open) {
             console.log(
-              `[${workspaceKey}] Peer is ready, sending our full state`
-            );
-            const stateVector = Y.encodeStateVector(doc);
-            console.log(
-              `[${workspaceKey}] Sending state vector to peer ${conn.peer}, size: ${stateVector.length}`
-            );
-            conn.send({
-              type: "stateVector",
-              data: stateVector,
-            });
-          }
-        } catch (error) {
-          console.error("Failed to send state on syncReady:", error);
-        }
-      }
-
-      if (msg.type === "sync" && msg.data) {
-        try {
-          if (doc) {
-            const data =
-              msg.data instanceof Uint8Array
-                ? msg.data
-                : new Uint8Array(msg.data);
-            console.log(
-              `[${workspaceKey}] Applying sync update from peer, size: ${data.length}`
-            );
-            Y.logUpdate(data);
-            Y.applyUpdate(doc, data, conn.peer);
-            console.log(`[${workspaceKey}] Sync update applied successfully`);
-          }
-        } catch (error) {
-          console.error("Failed to apply sync update:", error);
-        }
-      }
-
-      if (msg.type === "stateVector" && msg.data) {
-        try {
-          const stateVector =
-            msg.data instanceof Uint8Array ? msg.data : new Uint8Array(msg.data);
-          if (doc) {
-            console.log(
-              `[${workspaceKey}] Received stateVector from peer, encoding response`
-            );
-            const state = Y.encodeStateAsUpdate(doc, stateVector);
-            console.log(
-              `[${workspaceKey}] Sending state response, size: ${state.length}`
+              `[${workspaceKey}] Sending update to peer ${conn.peer}, size: ${update.length}`
             );
             conn.send({
               type: "sync",
-              data: state,
+              data: update,
             });
           }
         } catch (error) {
-          console.error("Failed to handle stateVector:", error);
+          console.error("Failed to send sync message:", error);
         }
-      }
-    });
+      };
 
-    // On connection, exchange initial state and subscribe to updates
-    conn.on("open", () => {
-      try {
-        if (!doc) {
-          console.error("Doc is null during connection open");
-          return;
-        }
-
+      // Handle incoming messages
+      conn.on("data", (msg: any) => {
         console.log(
-          `[${workspaceKey}] Connection opened with peer ${conn.peer}, subscribing to updates`
+          `[${workspaceKey}] Received message type: ${msg.type} from peer ${conn.peer}, data type: ${msg.data?.constructor?.name}`
         );
 
-        // Subscribe to future updates
-        doc.on("update", updateHandler);
+        if (msg.type === "syncReady") {
+          try {
+            if (doc) {
+              console.log(
+                `[${workspaceKey}] Peer is ready, sending our full state`
+              );
+              const stateVector = Y.encodeStateVector(doc);
+              console.log(
+                `[${workspaceKey}] Sending state vector to peer ${conn.peer}, size: ${stateVector.length}`
+              );
+              conn.send({
+                type: "stateVector",
+                data: stateVector,
+              });
+            }
+          } catch (error) {
+            console.error("Failed to send state on syncReady:", error);
+          }
+        }
 
-        // Send a signal that we're ready to sync
-        conn.send({
-          type: "syncReady",
-        });
+        if (msg.type === "sync" && msg.data) {
+          try {
+            if (doc) {
+              const data =
+                msg.data instanceof Uint8Array
+                  ? msg.data
+                  : new Uint8Array(msg.data);
+              console.log(
+                `[${workspaceKey}] Applying sync update from peer, size: ${data.length}`
+              );
+              Y.logUpdate(data);
+              Y.applyUpdate(doc, data, conn.peer);
+              console.log(`[${workspaceKey}] Sync update applied successfully`);
+            }
+          } catch (error) {
+            console.error("Failed to apply sync update:", error);
+          }
+        }
 
-        synced = true;
-        webrtcRetryStateByWorkspace.set(workspaceKey, { lastRetryCount: 0 });
-        console.log(`[${workspaceKey}] Connection ready with peer ${conn.peer}`);
-      } catch (error) {
-        console.error("Failed to sync initial state:", error);
+        if (msg.type === "stateVector" && msg.data) {
+          try {
+            const stateVector =
+              msg.data instanceof Uint8Array
+                ? msg.data
+                : new Uint8Array(msg.data);
+            if (doc) {
+              console.log(
+                `[${workspaceKey}] Received stateVector from peer, encoding response`
+              );
+              const state = Y.encodeStateAsUpdate(doc, stateVector);
+              console.log(
+                `[${workspaceKey}] Sending state response, size: ${state.length}`
+              );
+              conn.send({
+                type: "sync",
+                data: state,
+              });
+            }
+          } catch (error) {
+            console.error("Failed to handle stateVector:", error);
+          }
+        }
+      });
+
+      // On connection, exchange initial state and subscribe to updates
+      conn.on("open", () => {
+        try {
+          if (!doc) {
+            console.error("Doc is null during connection open");
+            return;
+          }
+
+          console.log(
+            `[${workspaceKey}] Connection opened with peer ${conn.peer}, subscribing to updates`
+          );
+
+          // Subscribe to future updates
+          doc.on("update", updateHandler);
+
+          // Send a signal that we're ready to sync
+          conn.send({
+            type: "syncReady",
+          });
+
+          synced = true;
+          webrtcRetryStateByWorkspace.set(workspaceKey, { lastRetryCount: 0 });
+          console.log(
+            `[${workspaceKey}] Connection ready with peer ${conn.peer}`
+          );
+        } catch (error) {
+          console.error("Failed to sync initial state:", error);
+        }
+      });
+
+      conn.on("close", () => {
+        // Unsubscribe from updates
+        if (synced && doc) {
+          doc.off("update", updateHandler);
+        }
+
+        // Remove from connected peers
+        const peers = connectedPeers.get(workspaceKey);
+        if (peers) {
+          peers.delete(conn.peer);
+        }
+      });
+
+      if (!peerConnections.has(workspaceKey)) {
+        peerConnections.set(workspaceKey, new Map());
       }
+      peerConnections.get(workspaceKey)!.set(conn.peer, conn);
+    })
+    .catch((error) => {
+      console.error("Failed to setup connection:", error);
+      conn.close();
     });
-
-    conn.on("close", () => {
-      // Unsubscribe from updates
-      if (synced && doc) {
-        doc.off("update", updateHandler);
-      }
-
-      // Remove from connected peers
-      const peers = connectedPeers.get(workspaceKey);
-      if (peers) {
-        peers.delete(conn.peer);
-      }
-    });
-
-    if (!peerConnections.has(workspaceKey)) {
-      peerConnections.set(workspaceKey, new Map());
-    }
-    peerConnections.get(workspaceKey)!.set(conn.peer, conn);
-  }).catch((error) => {
-    console.error("Failed to setup connection:", error);
-    conn.close();
-  });
 }
 
 export function disconnectWebRTC(workspaceKey: string) {
@@ -1008,7 +1045,7 @@ export async function updateWorkspaceProperty(
 export async function addAmountUpdate(
   workspaceKey: string,
   itemId: string,
-  type: 'set' | 'delta',
+  type: "set" | "delta",
   unit: string,
   quantity: number
 ) {
@@ -1044,7 +1081,7 @@ export async function getAmountUpdates(workspaceKey: string, itemId: string) {
 
   const updates: Array<{
     id: string;
-    type: 'set' | 'delta';
+    type: "set" | "delta";
     unit: string;
     quantity: number;
     timestamp: string;
@@ -1054,7 +1091,7 @@ export async function getAmountUpdates(workspaceKey: string, itemId: string) {
     const entryMap = entry as Y.Map<any>;
     updates.push({
       id: entryMap.get("id") as string,
-      type: entryMap.get("type") as 'set' | 'delta',
+      type: entryMap.get("type") as "set" | "delta",
       unit: entryMap.get("unit") as string,
       quantity: entryMap.get("quantity") as number,
       timestamp: entryMap.get("timestamp") as string,
@@ -1114,7 +1151,10 @@ export async function updateAmountUpdate(
   }
 }
 
-export async function calculateCurrentAmount(workspaceKey: string, itemId: string) {
+export async function calculateCurrentAmount(
+  workspaceKey: string,
+  itemId: string
+) {
   try {
     const updates = await getAmountUpdates(workspaceKey, itemId);
     if (updates.length === 0) {
@@ -1123,7 +1163,8 @@ export async function calculateCurrentAmount(workspaceKey: string, itemId: strin
 
     // Sort by timestamp
     const sorted = [...updates].sort(
-      (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+      (a, b) =>
+        new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
     );
 
     // Find most recent 'set' entry
@@ -1154,7 +1195,9 @@ export async function calculateCurrentAmount(workspaceKey: string, itemId: strin
         if (update.unit !== baseUnit && baseUnit) {
           // Try to convert
           try {
-            const converted = convert(update.quantity, update.unit as any).to(baseUnit as any) as unknown as number;
+            const converted = convert(update.quantity, update.unit as any).to(
+              baseUnit as any
+            ) as unknown as number;
             currentAmount += converted;
           } catch (e) {
             return {
@@ -1176,6 +1219,82 @@ export async function calculateCurrentAmount(workspaceKey: string, itemId: strin
   }
 }
 
+export interface TagAlias {
+  id: string;
+  destination: string;
+  createdAt: string;
+}
+
+export async function addAlias(
+  workspaceKey: string,
+  aliasTagId: string,
+  destinationItemId: string
+) {
+  const doc = await getWorkspaceDoc(workspaceKey);
+  const tagAliasesMap = doc.getMap("tagAliases") as Y.Map<any>;
+
+  const alias = new Y.Map();
+  alias.set("destination", destinationItemId);
+  alias.set("createdAt", new Date().toISOString());
+
+  tagAliasesMap.set(aliasTagId, alias);
+}
+
+export async function deleteAlias(workspaceKey: string, aliasTagId: string) {
+  const doc = await getWorkspaceDoc(workspaceKey);
+  const tagAliasesMap = doc.getMap("tagAliases") as Y.Map<any>;
+  tagAliasesMap.delete(aliasTagId);
+}
+
+export async function getAliasesForItem(
+  workspaceKey: string,
+  itemId: string
+): Promise<Array<TagAlias>> {
+  const doc = await getWorkspaceDoc(workspaceKey);
+  const tagAliasesMap = doc.getMap("tagAliases") as Y.Map<any>;
+
+  const aliases: Array<TagAlias> = [];
+
+  for (const [aliasId, aliasMap] of tagAliasesMap) {
+    const alias = aliasMap as Y.Map<any>;
+    if (alias.get("destination") === itemId) {
+      aliases.push({
+        id: aliasId,
+        destination: alias.get("destination") as string,
+        createdAt: alias.get("createdAt") as string,
+      });
+    }
+  }
+
+  return aliases;
+}
+
+export async function getAllAliases(
+  workspaceKey: string
+): Promise<Map<string, Array<TagAlias>>> {
+  const doc = await getWorkspaceDoc(workspaceKey);
+  const tagAliasesMap = doc.getMap("tagAliases") as Y.Map<any>;
+
+  const result = new Map<string, Array<TagAlias>>();
+
+  for (const [aliasId, aliasMap] of tagAliasesMap) {
+    const alias = aliasMap as Y.Map<any>;
+    const destination = alias.get("destination") as string;
+
+    if (!result.has(destination)) {
+      result.set(destination, []);
+    }
+
+    result.get(destination)!.push({
+      id: aliasId,
+      destination,
+      createdAt: alias.get("createdAt") as string,
+    });
+  }
+
+  return result;
+}
+
 export async function updateLastScanned(
   workspaceKey: string,
   itemId: string,
@@ -1187,7 +1306,7 @@ export async function updateLastScanned(
   const item = objectsMap.get(itemId) as Y.Map<any>;
   if (!item) return;
 
-  const  prevLastScanned = item.get("lastScannedAt") as string | null;
+  const prevLastScanned = item.get("lastScannedAt") as string | null;
 
   if (prevLastScanned) {
     // Ratelimit 1 scan per minute
@@ -1203,17 +1322,25 @@ export async function updateLastScanned(
   }
 }
 
-export async function exportWorkspaceState(workspaceKey: string): Promise<Uint8Array> {
+export async function exportWorkspaceState(
+  workspaceKey: string
+): Promise<Uint8Array> {
   const doc = await getWorkspaceDoc(workspaceKey);
   return Y.encodeStateAsUpdate(doc);
 }
 
-export async function importWorkspaceState(workspaceKey: string, update: Uint8Array): Promise<void> {
+export async function importWorkspaceState(
+  workspaceKey: string,
+  update: Uint8Array
+): Promise<void> {
   const doc = await getWorkspaceDoc(workspaceKey);
   Y.applyUpdate(doc, update, "import");
 }
 
-export function downloadWorkspaceFile(workspaceKey: string, data: Uint8Array): void {
+export function downloadWorkspaceFile(
+  workspaceKey: string,
+  data: Uint8Array
+): void {
   const metadata = workspaceRegistry.get(workspaceKey);
   const workspaceName = metadata?.name || "workspace";
   const timestamp = Date.now();

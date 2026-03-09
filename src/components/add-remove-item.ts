@@ -2,7 +2,7 @@ import { LitElement, html, css } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import {
   addItem,
-  findItemById,
+  getItem,
   deleteItem,
   updateLastScanned,
 } from "../services/storage.js";
@@ -255,7 +255,7 @@ export class AddRemoveItem extends LitElement {
 
   private async handleAddMode(qrData: string) {
     try {
-      const existingItem = await findItemById(this.workspaceKey, qrData);
+      const existingItem = await getItem(this.workspaceKey, qrData);
 
       if (existingItem) {
         // Item already exists, just show toast
@@ -276,7 +276,7 @@ export class AddRemoveItem extends LitElement {
 
   private async handleRemoveMode(qrData: string) {
     try {
-      const itemToRemove = await findItemById(this.workspaceKey, qrData);
+      const itemToRemove = await getItem(this.workspaceKey, qrData);
 
       if (itemToRemove) {
         await deleteItem(this.workspaceKey, itemToRemove.id);
