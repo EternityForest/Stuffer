@@ -383,7 +383,11 @@ export class ObjectInspect extends LitElement {
       if (isChecked) {
         await addItemToCategory(this.workspaceKey, categoryId, this.objectId);
       } else {
-        await removeItemFromCategory(this.workspaceKey, categoryId, this.objectId);
+        await removeItemFromCategory(
+          this.workspaceKey,
+          categoryId,
+          this.objectId
+        );
       }
       await this.loadCategories();
     } catch (error) {
@@ -516,6 +520,8 @@ export class ObjectInspect extends LitElement {
       }
 
       <div class="stacked-form">
+
+
           <label>Title
           <input
             type="text"
@@ -551,7 +557,13 @@ export class ObjectInspect extends LitElement {
                   class="image-preview"
                 />`
               : ""
-          }
+          }         
+        <label>ID
+          <input
+            type="text"
+            readonly
+            .value=${this.objectId}
+          /></label>
         </div>
           <label>Loadout
           <select @change=${this.selectLoadout}>
@@ -675,28 +687,40 @@ export class ObjectInspect extends LitElement {
           }
 
           <details style="margin: 1rem 0; padding: 1rem; background: #f9f9f9; border-radius: 4px; border: 1px solid #eee;">
-            <summary style="cursor: pointer; font-weight: 500;">Categories (${this.itemCategories.length})</summary>
+            <summary style="cursor: pointer; font-weight: 500;">Categories (${
+              this.itemCategories.length
+            })</summary>
             <div style="margin-top: 1rem;">
-              ${this.categories.length > 0
-                ? html`
-                    ${this.categories.map(
-                      (cat) => html`
-                        <label style="display: block; margin-bottom: 0.5rem; cursor: pointer;">
-                          <input
-                            type="checkbox"
-                            ?checked=${this.itemCategories.some((ic) => ic.id === cat.id)}
-                            @change=${(e: Event) =>
-                              this.handleCategoryToggle(
-                                cat.id,
-                                (e.target as HTMLInputElement).checked
+              ${
+                this.categories.length > 0
+                  ? html`
+                      ${this.categories.map(
+                        (cat) => html`
+                          <label
+                            style="display: block; margin-bottom: 0.5rem; cursor: pointer;"
+                          >
+                            <input
+                              type="checkbox"
+                              ?checked=${this.itemCategories.some(
+                                (ic) => ic.id === cat.id
                               )}
-                          />
-                          <span style="margin-left: 0.5rem;">${cat.name}</span>
-                        </label>
-                      `
-                    )}
-                  `
-                : html` <div style="color: #666;">No categories available</div> `}
+                              @change=${(e: Event) =>
+                                this.handleCategoryToggle(
+                                  cat.id,
+                                  (e.target as HTMLInputElement).checked
+                                )}
+                            />
+                            <span style="margin-left: 0.5rem;"
+                              >${cat.name}</span
+                            >
+                          </label>
+                        `
+                      )}
+                    `
+                  : html`
+                      <div style="color: #666;">No categories available</div>
+                    `
+              }
             </div>
           </details>
 
@@ -794,8 +818,11 @@ export class ObjectInspect extends LitElement {
                               ).toLocaleString()}</small
                             >
 
-                            ${this.item && !this.isContentRecordCurrent(content, this.item)
-                              ? html` <p class="warning">Need to reinventory</p> `
+                            ${this.item &&
+                            !this.isContentRecordCurrent(content, this.item)
+                              ? html`
+                                  <p class="warning">Need to reinventory</p>
+                                `
                               : html``}
                           </div>
                         `;

@@ -42,6 +42,8 @@ export class AddRemoveItem extends LitElement {
   private scanningInterval: number | null = null;
   private audioContext: AudioContext | null = null;
 
+  private boundGlobalTagScan: (event: Event) => void = () => {};
+
   constructor() {
     super();
     this.itemName = "";
@@ -57,8 +59,19 @@ export class AddRemoveItem extends LitElement {
   disconnectedCallback() {
     super.disconnectedCallback();
     this.stopScanning();
+    globalThis.removeEventListener("globalTagScan", this.boundGlobalTagScan);
   }
 
+  connectedCallback(): void {
+    super.connectedCallback();
+    this.boundGlobalTagScan = this.globalTagScan.bind(this) as typeof this.boundGlobalTagScan
+    globalThis.addEventListener("globalTagScan", this.boundGlobalTagScan );
+  }
+
+  globalTagScan(event: CustomEvent<{ qrData: string }>) {
+    this.handleQRScan(event.detail.qrData);
+  }
+  
   render() {
     return html`
       <div class="header">

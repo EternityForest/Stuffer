@@ -72,6 +72,7 @@ export class ListBrowser extends LitElement {
 
   private videoElement: HTMLVideoElement | null = null;
   private scanningInterval: number | null = null;
+  private boundGlobalTagScan: (event: Event) => void = () => {}
   private updateListener: ((update: Uint8Array, origin: any) => void) | null =
     null;
   private previousMode:
@@ -103,15 +104,24 @@ export class ListBrowser extends LitElement {
     super.disconnectedCallback();
     this.stopScanning();
     this.cleanupYjsListener();
+    globalThis.removeEventListener("globalTagScan", this.boundGlobalTagScan);
   }
 
   connectedCallback() {
     super.connectedCallback();
     this.loadItems();
     this.loadCategories();
-    this.setupYjsListener();
+    this.setupYjsListener();  
+    
+    this.boundGlobalTagScan = this.globalTagScan.bind(this) as typeof this.boundGlobalTagScan
+    globalThis.addEventListener("globalTagScan", this.boundGlobalTagScan );
   }
 
+
+  globalTagScan(event: CustomEvent<{ qrData: string }>) {
+    this.handleQRScan(event.detail.qrData);
+  }
+  
   private async setupYjsListener() {
     try {
       const yDoc = await getWorkspaceDoc(this.workspaceKey);

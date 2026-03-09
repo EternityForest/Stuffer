@@ -1,6 +1,6 @@
 import { LitElement, html, css } from 'lit';
 import { customElement } from 'lit/decorators.js';
-import { initializeYDoc, getWorkspacesMap, getItem } from './services/storage.js';
+import { initializeYDoc, getWorkspacesMap, resolveItemId, getItem } from './services/storage.js';
 import { registerAssetIdProtocolHandler, parseAssetIdURL, resolveAssetIdURL, registerWorkspaceSearcher } from './services/url-handler.js';
 import './components/app-shell.js';
 import './components/workspace-selector.js';
@@ -48,9 +48,10 @@ async function initApp() {
 
         // Search each workspace for the asset
         for (const [workspaceKey] of workspacesMap) {
-          const item = await getItem(workspaceKey, assetId);
+          const resolvedId = await resolveItemId(workspaceKey, assetId);
+          const item = await getItem(workspaceKey, resolvedId);
           if (item) {
-            return { workspaceKey, objectId: assetId };
+            return { workspaceKey, objectId: resolvedId };
           }
         }
       } catch (error) {

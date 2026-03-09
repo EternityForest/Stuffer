@@ -39,6 +39,8 @@ export class AliasEditor extends LitElement {
   @state()
   declare scanToastMessage: string;
 
+  private boundGlobalTagScan: (event: Event) => (void) = () => {}
+
   private videoElement: HTMLVideoElement | null = null;
   private scanningInterval: number | null = null;
 
@@ -58,13 +60,20 @@ export class AliasEditor extends LitElement {
     super.connectedCallback();
     this.loadAliases();
     this.loadItemTitle();
+     this.boundGlobalTagScan = this.globalTagScan.bind(this) as typeof this.boundGlobalTagScan
+    globalThis.addEventListener("globalTagScan", this.boundGlobalTagScan );
   }
 
   disconnectedCallback() {
     super.disconnectedCallback();
-    this.stopScanning();
+    this.stopScanning();    globalThis.removeEventListener("globalTagScan", this.boundGlobalTagScan);
+
   }
 
+
+  globalTagScan(event: CustomEvent<{ qrData: string }>) {
+    this.handleQRCodeDetected(event.detail.qrData);
+  }
   private async loadItemTitle() {
     try {
       const item = await getItem(this.workspaceKey, this.itemId);

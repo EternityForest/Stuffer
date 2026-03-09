@@ -11,6 +11,7 @@
     "deploy": "gh-pages -d dist"
   },
   "dependencies": {
+    "@types/w3c-web-nfc": "^1.0.4",
     "convert": "^7.0.0",
     "dom-to-image": "^2.6.0",
     "jsqr": "^1.4.0",

@@ -39,6 +39,11 @@ export class WorkspaceBrowser extends LitElement {
   @state()
   declare selectedCategory: string;
 
+  @state()
+  declare ndef: NDEFReader| null;
+
+  private nfcAbort: AbortController | null = null;
+
   private updateListener: ((update: Uint8Array, origin: any) => void) | null =
     null;
 
@@ -50,6 +55,9 @@ export class WorkspaceBrowser extends LitElement {
     this.objects = [];
     this.categories = [];
     this.selectedCategory = "all";
+
+    this.nfcAbort = globalThis.nfcabort as AbortController || null
+    this.ndef = globalThis.nfcreader || null
   }
 
   connectedCallback() {
@@ -62,6 +70,38 @@ export class WorkspaceBrowser extends LitElement {
   disconnectedCallback() {
     super.disconnectedCallback();
     this.cleanupYjsListener();
+  }
+
+
+  private async toggleNfc() {
+
+
+    if (this.nfcAbort){
+      this.nfcAbort.abort();
+      this.nfcAbort = null;
+      this.ndef = null;
+      globalThis.nfcreader = null
+      globalThis.nfcabort = null
+      return
+    }  
+    
+    this.nfcAbort = new AbortController();
+    globalThis.nfcabort = this.nfcAbort
+
+    const ndef = new NDEFReader();
+    await ndef.scan();
+
+    ndef.addEventListener("readingerror", () => {
+      console.error("Argh! Cannot read data from the NFC tag. Try another one?");
+    });
+
+    ndef.addEventListener("reading", ({ _message, serialNumber }) => {
+      this.dispatchEvent(
+        new CustomEvent<{ qrData: string }>("globalTagScan", {
+          detail: { qrData: "nfc-id://" + serialNumber },
+        })
+      );
+    });
   }
 
   private async setupYjsListener() {
@@ -102,7 +142,7 @@ export class WorkspaceBrowser extends LitElement {
       }
       this.workspaceName = (await getWorkspacesMap()).get(
         this.workspaceKey
-      )?.name;
+      )?.name as string;
     } catch (error) {
       console.error("Failed to load items:", error);
       this.objects = [];
@@ -151,6 +191,9 @@ export class WorkspaceBrowser extends LitElement {
         <button @click=${() => this.navigateToQRSheets()}>QR Sheets</button>
         <button @click=${() => this.navigateToLoadouts()}>Loadouts</button>
         <button @click=${() => this.navigateToSettings()}>Settings</button>
+        <button @click=${() => this.toggleNfc()}
+        class="${this.nfcAbort ? "success" : ""}"
+        >NFC</button>
         <button @click=${() => this.dispatchNavigate("workspace-selector")}>
           Back
         </button>
