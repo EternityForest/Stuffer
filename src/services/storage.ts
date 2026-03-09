@@ -7,7 +7,6 @@ import {
   getWorkspaceLocalSettings,
 } from "./local-settings.js";
 import convert from "convert";
-import { set } from "lib0/encoding.js";
 
 interface WorkspaceMetadata {
   name: string;
@@ -139,12 +138,11 @@ export async function createWorkspace(name: string) {
   doc.getMap("categories"); // Initialize categories map
 
   metadataMap.set("name", name);
-  metadataMap.set("syncRoomKey", workspaceKey);
 
   return workspaceKey;
 }
 
-export async function getWorkspace(key: string) {
+export async function getWorkspaceSyncedMetadata(key: string) {
   const doc = await getWorkspaceDoc(key);
   return doc.getMap("metadata");
 }
@@ -1022,7 +1020,7 @@ export async function updateWorkspaceSyncPeerId(
   }
 }
 
-export async function updateWorkspaceProperty(
+export async function updateWorkspaceSyncedMetadataProperty(
   workspaceKey: string,
   property: string,
   value: any

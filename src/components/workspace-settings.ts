@@ -1,7 +1,7 @@
 import { LitElement, html, css } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import {
-  getWorkspace,
+  getWorkspaceSyncedMetadata,
   getWebRTCStatus,
   updateWorkspaceSyncPeerId,
   enableWebRTC,
@@ -108,7 +108,7 @@ export class WorkspaceSettings extends LitElement {
     if (!this.workspaceKey) return;
 
     try {
-      const workspace = await getWorkspace(this.workspaceKey);
+      const workspace = await getWorkspaceSyncedMetadata(this.workspaceKey);
       if (workspace) {
         this.workspaceName = (workspace as any).get("name") as string;
         // Get sync key from local settings, not from synced workspace
