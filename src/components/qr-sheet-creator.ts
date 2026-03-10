@@ -163,6 +163,7 @@ export class QRSheetCreator extends LitElement {
       max-width: 90%;
       max-height: 90%;
       display: block;
+      box-sizing: border-box;
     }
 
     .loading {
