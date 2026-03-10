@@ -197,6 +197,7 @@ export class AddRemoveItem extends LitElement {
   }
 
   private setMode(mode: "add" | "remove") {
+    if(this.mode === mode) return;
     this.mode = mode;
     this.qrData = "";
     this.itemName = "";
