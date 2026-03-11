@@ -1,6 +1,10 @@
 import { LitElement, html, css } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
-import { getItem, getWorkspaceDoc } from "../services/storage.js";
+import {
+  getItem,
+  getWorkspaceDoc,
+  resolveItemId,
+} from "../services/storage.js";
 import jsQR from "jsqr";
 import "./nfc-toggle-button.js";
 
@@ -126,14 +130,20 @@ export class QrScanner extends LitElement {
     this.boundGlobalTagScan = this.globalTagScan.bind(this) as EventListener;
     globalThis.addEventListener("globalTagScan", this.boundGlobalTagScan);
     this.setupYjsListener();
+    this.startScanning();
   }
 
   disconnectedCallback() {
     super.disconnectedCallback();
+    // Ensure scanning is fully stopped
     this.stopScanning();
+
+    // Remove event listeners
     if (this.boundGlobalTagScan) {
       globalThis.removeEventListener("globalTagScan", this.boundGlobalTagScan);
     }
+
+    // Cleanup Yjs listener
     this.cleanupYjsListener();
   }
 
@@ -176,26 +186,35 @@ export class QrScanner extends LitElement {
 
   private async startScanning() {
     try {
+      this.isScanning = true;
+      await this.updateComplete;
+
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: "environment" },
       });
 
-      this.videoElement = this.shadowRoot?.querySelector("video");
-      if (!this.videoElement) {
-        await this.updateComplete;
-        this.videoElement = this.querySelector("#camera-video");
-      }
+      this.videoElement = this.querySelector("#camera-video") as HTMLVideoElement;
+      this.canvasElement = this.querySelector("#scan-canvas") as HTMLCanvasElement;
 
       if (this.videoElement) {
         this.videoElement.srcObject = stream;
-        this.isScanning = true;
 
-        this.canvasElement = this.querySelector("#scan-canvas");
-        this.startQRScanning();
+        // Wait for video to be ready before scanning
+        const playPromise = this.videoElement.play();
+        if (playPromise !== undefined) {
+          playPromise.then(() => {
+            this.startQRScanning();
+          }).catch((error) => {
+            console.error("Error playing video:", error);
+          });
+        } else {
+          this.startQRScanning();
+        }
       }
     } catch (error) {
       console.error("Error accessing camera:", error);
       this.showToast("Could not access camera", "error");
+      this.isScanning = false;
     }
   }
 
@@ -244,7 +263,8 @@ export class QrScanner extends LitElement {
 
   private async handleQRScan(qrData: string) {
     try {
-      const item = await getItem(this.workspaceKey, qrData);
+      const resolvedId = await resolveItemId(this.workspaceKey, qrData);
+      const item = await getItem(this.workspaceKey, resolvedId);
 
       // Check if item is already scanned
       const alreadyScanned = this.scannedItems.some((i) => i.id === item.id);
@@ -320,16 +340,7 @@ export class QrScanner extends LitElement {
           <button @click=${() => this.goBack()}>Back</button>
         </div>
 
-        ${this.isScanning
-          ? html`
-              <div id="scan-container">
-                <video id="camera-video" autoplay playsinline></video>
-                <canvas id="scan-canvas"></canvas>
-              </div>
-            `
-          : ""}
-
-        ${this.scannedItems.length > 0
+                ${this.scannedItems.length > 0
           ? html`
               <div>
                 <h2>Scanned Items</h2>
@@ -353,6 +364,15 @@ export class QrScanner extends LitElement {
                   : "Start scanning to view results."}
               </div>
             `}
+
+        ${this.isScanning
+          ? html`
+              <div id="scan-container">
+                <video id="camera-video" autoplay playsinline></video>
+                <canvas id="scan-canvas" style="display: none"></canvas>
+              </div>
+            `
+          : ""}
       </div>
     `;
   }
