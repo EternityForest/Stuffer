@@ -152,6 +152,7 @@ export class QRSheetCreator extends LitElement {
 
     .sticker {
       box-sizing: border-box;
+      border: none;
       display: flex;
       align-items: center;
       justify-content: center;

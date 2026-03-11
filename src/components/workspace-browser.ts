@@ -9,6 +9,7 @@ import {
   getCategoryItemsOverview,
   getDefaultCategory,
 } from "../services/storage.js";
+import "./nfc-toggle-button.js";
 
 @customElement("workspace-browser")
 export class WorkspaceBrowser extends LitElement {
@@ -39,11 +40,6 @@ export class WorkspaceBrowser extends LitElement {
   @state()
   declare selectedCategory: string;
 
-  @state()
-  declare ndef: NDEFReader | null;
-
-  private nfcAbort: AbortController | null = null;
-
   private updateListener: ((update: Uint8Array, origin: any) => void) | null =
     null;
 
@@ -55,9 +51,6 @@ export class WorkspaceBrowser extends LitElement {
     this.objects = [];
     this.categories = [];
     this.selectedCategory = "";
-
-    this.nfcAbort = (globalThis.nfcabort as AbortController) || null;
-    this.ndef = globalThis.nfcreader || null;
   }
 
   connectedCallback() {
@@ -72,45 +65,17 @@ export class WorkspaceBrowser extends LitElement {
     this.cleanupYjsListener();
   }
 
-  private async toggleNfc() {
-    if (this.nfcAbort) {
-      this.nfcAbort.abort();
-      this.nfcAbort = null;
-      this.ndef = null;
-      globalThis.nfcreader = null;
-      globalThis.nfcabort = null;
-      alert("NFC scanning stopped");
-          this.requestUpdate();
-
-      return;
-    }
-    try {
-      this.nfcAbort = new AbortController();
-      globalThis.nfcabort = this.nfcAbort;
-
-      const ndef = new NDEFReader();
-      await ndef.scan();
-
-      ndef.addEventListener("readingerror", () => {
-        alert("Argh! Cannot read data from the NFC tag. Try another one?");
-        console.error(
-          "Argh! Cannot read data from the NFC tag."
-        );
-      });
-
-      ndef.addEventListener("reading", ({ _message, serialNumber }) => {
-        globalThis.dispatchEvent(
-          new CustomEvent<{ qrData: string }>("globalTagScan", {
-            detail: { qrData: "nfc-id://" + serialNumber },
-          })
-        );
-      });
-    } catch (e) {
-      alert(e);
-      console.error(e);
-    }
-
-    this.requestUpdate();
+  private navigateToScanner() {
+    this.dispatchEvent(
+      new CustomEvent("navigate", {
+        detail: {
+          screen: "qr-scanner",
+          context: { workspaceKey: this.workspaceKey },
+        },
+        bubbles: true,
+        composed: true,
+      })
+    );
   }
 
   private async setupYjsListener() {
@@ -200,15 +165,11 @@ export class WorkspaceBrowser extends LitElement {
           }}
         />
         <button @click=${() => this.addItem()}>Add Item</button>
+        <button @click=${() => this.navigateToScanner()}>Scanner</button>
+        <nfc-toggle-button></nfc-toggle-button>
         <button @click=${() => this.navigateToQRSheets()}>QR Sheets</button>
         <button @click=${() => this.navigateToLoadouts()}>Loadouts</button>
         <button @click=${() => this.navigateToSettings()}>Settings</button>
-        <button
-          @click=${() => this.toggleNfc()}
-          class="${this.nfcAbort ? "highlight" : ""}"
-        >
-          NFC
-        </button>
         <button @click=${() => this.dispatchNavigate("workspace-selector")}>
           Back
         </button>

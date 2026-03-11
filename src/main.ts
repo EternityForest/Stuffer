@@ -12,6 +12,7 @@ import './components/loadouts-manager.js';
 import './components/workspace-settings.js';
 import './components/layout-browser.js';
 import './components/qr-sheet-creator.js';
+import './components/qr-scanner.js';
 
 import './styles/barrel.css';
 import './styles/modern.css';

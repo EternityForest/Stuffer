@@ -116,6 +116,15 @@ export class ObjectInspect extends LitElement {
   private updateListener: ((update: Uint8Array, origin: any) => void) | null =
     null;
 
+  private selectObject(objectId: string) {
+    this.dispatchEvent(
+      new CustomEvent("select-object", {
+        detail: objectId,
+        bubbles: true,
+        composed: true,
+      })
+    );
+  }
   private isContentRecordCurrent(
     record: ItemContentRecord,
     container: ItemData
@@ -669,7 +678,16 @@ export class ObjectInspect extends LitElement {
     
 
           <h3>Location</h3>
-          <p>${this.inContainer ? "In Container " + this.locationTitle : ""}</p>
+          ${
+            this.inContainer
+              ? html`<p>
+                  In Container
+                  <a @click=${() => this.selectObject(this.inContainer)}>
+                    ${this.locationTitle}</a
+                  >
+                </p>`
+              : html`<p>Not in Container</p>`
+          }
 
           ${
             this.lastScannedLocation
@@ -809,7 +827,9 @@ export class ObjectInspect extends LitElement {
                         return html`
                           <div class="content-item ${className}">
                             <span class="content-item-name"
-                              ><b>${content.name}</b></span
+                              ><a @click=${() => this.selectObject(content.id)}
+                                >${content.name}</a
+                              ></span
                             >
                             <small
                               >Checked at

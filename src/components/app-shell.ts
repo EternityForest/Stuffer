@@ -12,7 +12,6 @@ const appStyles = css`
     gap: 20px;
   }
 
-
   .container {
     padding: 20px;
   }
@@ -27,7 +26,8 @@ type Screen =
   | "loadouts-manager"
   | "workspace-settings"
   | "layout-browser"
-  | "qr-sheet-creator";
+  | "qr-sheet-creator"
+  | "qr-scanner";
 
 @customElement("app-shell")
 export class AppShell extends LitElement {
@@ -77,9 +77,7 @@ export class AppShell extends LitElement {
   }
 
   render() {
-    return html`
-      <div class="container">${this.renderScreen()}</div>
-    `;
+    return html` <div class="container">${this.renderScreen()}</div> `;
   }
 
   private renderScreen() {
@@ -99,6 +97,7 @@ export class AppShell extends LitElement {
         return html`<object-inspect
           .objectId=${this.selectedObject}
           .workspaceKey=${this.currentWorkspace}
+          @select-object=${this.onSelectObject}
           @navigate=${this.onNavigate}
         ></object-inspect>`;
       case "list-browser":
@@ -137,6 +136,12 @@ export class AppShell extends LitElement {
         return html`<qr-sheet-creator
           @navigate=${this.onNavigate}
         ></qr-sheet-creator>`;
+      case "qr-scanner":
+        return html`<qr-scanner
+          .workspaceKey=${this.currentWorkspace}
+          @select-object=${this.onSelectObject}
+          @navigate=${this.onNavigate}
+        ></qr-scanner>`;
       default:
         return html`<div>Unknown screen</div>`;
     }

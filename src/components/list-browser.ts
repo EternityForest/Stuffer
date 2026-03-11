@@ -73,7 +73,7 @@ export class ListBrowser extends LitElement {
 
   private videoElement: HTMLVideoElement | null = null;
   private scanningInterval: number | null = null;
-  private boundGlobalTagScan: (event: Event) => void = () => {}
+  private boundGlobalTagScan: (event: Event) => void = () => {};
   private updateListener: ((update: Uint8Array, origin: any) => void) | null =
     null;
   private previousMode:
@@ -112,17 +112,18 @@ export class ListBrowser extends LitElement {
     super.connectedCallback();
     this.loadItems();
     this.loadCategories();
-    this.setupYjsListener();  
-    
-    this.boundGlobalTagScan = this.globalTagScan.bind(this) as typeof this.boundGlobalTagScan
-    globalThis.addEventListener("globalTagScan", this.boundGlobalTagScan );
-  }
+    this.setupYjsListener();
 
+    this.boundGlobalTagScan = this.globalTagScan.bind(
+      this
+    ) as typeof this.boundGlobalTagScan;
+    globalThis.addEventListener("globalTagScan", this.boundGlobalTagScan);
+  }
 
   globalTagScan(event: CustomEvent<{ qrData: string }>) {
     this.handleQRScan(event.detail.qrData);
   }
-  
+
   private async setupYjsListener() {
     try {
       const yDoc = await getWorkspaceDoc(this.workspaceKey);
@@ -242,6 +243,8 @@ export class ListBrowser extends LitElement {
 
       <div class="tool-bar">
         <h2>${title}</h2>
+        <nfc-toggle-button></nfc-toggle-button>
+
         ${this.selectingContainer
           ? html`
               <button @click=${() => this.cancelContainerSelection()}>
@@ -683,12 +686,9 @@ export class ListBrowser extends LitElement {
     try {
       const resolvedId = await resolveItemId(this.workspaceKey, qrData);
       let item: ItemData | null = null;
-      try{
-      item = await getItem(this.workspaceKey, qrData);
-      }
-      catch (error) {
-
-      }
+      try {
+        item = await getItem(this.workspaceKey, qrData);
+      } catch (error) {}
       if (!item) {
         this.showToast("QR code not found", "error");
         if (this.isScanning && this.videoElement) {
