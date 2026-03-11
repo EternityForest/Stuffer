@@ -4,6 +4,7 @@ import {
   getItem,
   getWorkspaceDoc,
   resolveItemId,
+  updateLastScanned,
 } from "../services/storage.js";
 import jsQR from "jsqr";
 import "./nfc-toggle-button.js";
@@ -193,8 +194,12 @@ export class QrScanner extends LitElement {
         video: { facingMode: "environment" },
       });
 
-      this.videoElement = this.querySelector("#camera-video") as HTMLVideoElement;
-      this.canvasElement = this.querySelector("#scan-canvas") as HTMLCanvasElement;
+      this.videoElement = this.querySelector(
+        "#camera-video"
+      ) as HTMLVideoElement;
+      this.canvasElement = this.querySelector(
+        "#scan-canvas"
+      ) as HTMLCanvasElement;
 
       if (this.videoElement) {
         this.videoElement.srcObject = stream;
@@ -202,11 +207,13 @@ export class QrScanner extends LitElement {
         // Wait for video to be ready before scanning
         const playPromise = this.videoElement.play();
         if (playPromise !== undefined) {
-          playPromise.then(() => {
-            this.startQRScanning();
-          }).catch((error) => {
-            console.error("Error playing video:", error);
-          });
+          playPromise
+            .then(() => {
+              this.startQRScanning();
+            })
+            .catch((error) => {
+              console.error("Error playing video:", error);
+            });
         } else {
           this.startQRScanning();
         }
@@ -265,6 +272,23 @@ export class QrScanner extends LitElement {
     try {
       const resolvedId = await resolveItemId(this.workspaceKey, qrData);
       const item = await getItem(this.workspaceKey, resolvedId);
+
+      // Basic usage to get location
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+          (position) => {
+            updateLastScanned(
+              this.workspaceKey,
+              qrData,
+              position.coords.latitude,
+              position.coords.longitude
+            );
+          },
+          (error) => console.error(error)
+        );
+      } else {
+        updateLastScanned(this.workspaceKey, qrData, 0, 0);
+      }
 
       // Check if item is already scanned
       const alreadyScanned = this.scannedItems.some((i) => i.id === item.id);
@@ -340,7 +364,7 @@ export class QrScanner extends LitElement {
           <button @click=${() => this.goBack()}>Back</button>
         </div>
 
-                ${this.scannedItems.length > 0
+        ${this.scannedItems.length > 0
           ? html`
               <div>
                 <h2>Scanned Items</h2>
@@ -364,7 +388,6 @@ export class QrScanner extends LitElement {
                   : "Start scanning to view results."}
               </div>
             `}
-
         ${this.isScanning
           ? html`
               <div id="scan-container">

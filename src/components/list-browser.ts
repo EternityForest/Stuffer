@@ -15,6 +15,7 @@ import {
   resolveItemId,
   getCategories,
   getCategoryItemsOverview,
+  updateLastScanned
 } from "../services/storage.js";
 import type { ItemData } from "../services/storage.js";
 import jsQR from "jsqr";
@@ -695,6 +696,23 @@ export class ListBrowser extends LitElement {
           this.startQRScanning();
         }
         return;
+      }
+
+      // Basic usage to get location
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+          (position) => {
+            updateLastScanned(
+              this.workspaceKey,
+              qrData,
+              position.coords.latitude,
+              position.coords.longitude
+            );
+          },
+          (error) => console.error(error)
+        );
+      } else {
+        updateLastScanned(this.workspaceKey, qrData, 0, 0);
       }
 
       const itemName = await lookupItemName(this.workspaceKey, resolvedId);
