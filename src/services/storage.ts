@@ -702,7 +702,11 @@ function connectToPeer(
   peer: Peer
 ) {
   // Connect to room rendezvous peer
-  const roomConn = peer.connect(remotePeerId);
+  const roomConn = peer.connect(remotePeerId,
+    {
+      reliable: true,
+    }
+  );
 
   // Set up sync
   setupConnection(workspaceKey, roomConn);
