@@ -18,6 +18,7 @@ import {
 } from "../services/storage.js";
 import { getWorkspaceLocalSettings } from "../services/local-settings.js";
 import { generateUUID } from "../utils/uuid.js";
+import QRCode from "qrcode";
 
 @customElement("workspace-settings")
 export class WorkspaceSettings extends LitElement {
@@ -73,8 +74,15 @@ export class WorkspaceSettings extends LitElement {
   @state()
   declare defaultCategory: string;
 
+  @state()
+  declare qrCodeDataUrl: string | null;
+
+  @state()
+  declare showScanSync: boolean;
+
   private statusInterval: number | null = null;
   private fileInput: HTMLInputElement | null = null;
+  private boundScanSyncEvent: EventListener | null = null;
 
   constructor() {
     super();
@@ -94,6 +102,8 @@ export class WorkspaceSettings extends LitElement {
     this.newCategoryName = "";
     this.showCategoryForm = false;
     this.defaultCategory = "all";
+    this.qrCodeDataUrl = null;
+    this.showScanSync = false;
   }
 
   async connectedCallback() {
@@ -101,7 +111,12 @@ export class WorkspaceSettings extends LitElement {
     await this.loadWorkspaceData();
     await this.loadCategories();
     await this.loadDefaultCategory();
+    await this.generateQRCode();
     this.startStatusPolling();
+
+    // Listen for scanned sync peer ID
+    this.boundScanSyncEvent = this.handleScanSyncEvent.bind(this) as EventListener;
+    globalThis.addEventListener("globalTagScan", this.boundScanSyncEvent);
   }
 
   disconnectedCallback() {
@@ -109,6 +124,48 @@ export class WorkspaceSettings extends LitElement {
     if (this.statusInterval) {
       clearInterval(this.statusInterval);
     }
+    if (this.boundScanSyncEvent) {
+      globalThis.removeEventListener("globalTagScan", this.boundScanSyncEvent);
+    }
+  }
+
+  private async generateQRCode() {
+    if (!this.localPeerId) return;
+
+    try {
+      this.qrCodeDataUrl = await QRCode.toDataURL(this.localPeerId, {
+        width: 200,
+        errorCorrectionLevel: "H",
+        type: "image/png",
+      });
+    } catch (error) {
+      console.error("Failed to generate QR code:", error);
+    }
+  }
+
+  private handleScanSyncEvent(event: Event) {
+    const customEvent = event as CustomEvent<{ qrData: string }>;
+    const scannedData = customEvent.detail.qrData;
+
+    // If this is an NFC tag, it will have "nfc-id://" prefix, use raw data
+    // Otherwise it's a QR code with the peer ID
+    const peerId = scannedData.replace("nfc-id://", "");
+
+    this.newsyncToPeer = peerId;
+    this.showScanSync = false;
+  }
+
+  private navigateToScanForSync() {
+    this.dispatchEvent(
+      new CustomEvent("navigate", {
+        detail: {
+          screen: "qr-scanner",
+          context: { workspaceKey: this.workspaceKey },
+        },
+        bubbles: true,
+        composed: true,
+      })
+    );
   }
 
   private async loadWorkspaceData() {
@@ -124,6 +181,7 @@ export class WorkspaceSettings extends LitElement {
         this.localPeerId =
           getWorkspaceLocalSettings(this.workspaceKey).localPeerId || "";
         this.newsyncToPeer = this.syncToPeer;
+        await this.generateQRCode();
       }
     } catch (error) {
       console.error("Failed to load workspace data:", error);
@@ -180,6 +238,7 @@ export class WorkspaceSettings extends LitElement {
         const uuid = generateUUID();
         await updateWorkspaceLocalPeerId(this.workspaceKey, uuid);
         await this.loadWorkspaceData();
+        await this.generateQRCode();
       } catch (error) {
         console.error("Failed to regenerate local sync key:", error);
         this.error = "Failed to regenerate local sync key";
@@ -403,6 +462,42 @@ export class WorkspaceSettings extends LitElement {
 
         <div class="section">
           <h3>Sync Configuration</h3>
+
+          <div class="form-group">
+            <label>Local Peer ID QR Code</label>
+            ${this.localPeerId
+              ? html`
+                  <div style="display: flex; flex-direction: column; align-items: center; gap: 1rem;">
+                    ${this.qrCodeDataUrl
+                      ? html`
+                          <img
+                            src="${this.qrCodeDataUrl}"
+                            alt="Local Peer ID QR Code"
+                            style="border: 2px solid #ddd; padding: 0.5rem; border-radius: 4px;"
+                          />
+                        `
+                      : html`<div>Generating QR code...</div>`}
+                    <div style="text-align: center; font-size: 0.85rem; color: #666;">
+                      Scan this QR code from another device to sync
+                    </div>
+                  </div>
+                `
+              : html`<div style="color: #999;">No local peer ID set</div>`}
+          </div>
+
+          <div class="form-group">
+            <label>Sync by Scanning Remote QR</label>
+            <button
+              @click=${() => this.navigateToScanForSync()}
+              style="width: 100%; margin-top: 0.5rem;"
+            >
+              Scan Remote Peer QR Code
+            </button>
+            <div class="info">
+              Use the scanner to read a QR code from the remote peer's settings
+            </div>
+          </div>
+
           ${this.editingsyncToPeer
             ? html`
                 <div class="stacked-form">
