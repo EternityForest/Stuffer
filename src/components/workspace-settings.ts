@@ -19,6 +19,7 @@ import {
 import { getWorkspaceLocalSettings } from "../services/local-settings.js";
 import { generateUUID } from "../utils/uuid.js";
 import QRCode from "qrcode";
+import jsQR from "jsqr";
 
 @customElement("workspace-settings")
 export class WorkspaceSettings extends LitElement {
@@ -80,9 +81,15 @@ export class WorkspaceSettings extends LitElement {
   @state()
   declare showScanSync: boolean;
 
+  @state()
+  declare isScanningForSync: boolean;
+
   private statusInterval: number | null = null;
   private fileInput: HTMLInputElement | null = null;
   private boundScanSyncEvent: EventListener | null = null;
+  private videoElement: HTMLVideoElement | null = null;
+  private canvasElement: HTMLCanvasElement | null = null;
+  private scanningAnimation: number | null = null;
 
   constructor() {
     super();
@@ -104,6 +111,7 @@ export class WorkspaceSettings extends LitElement {
     this.defaultCategory = "all";
     this.qrCodeDataUrl = null;
     this.showScanSync = false;
+    this.isScanningForSync = false;
   }
 
   async connectedCallback() {
@@ -115,7 +123,9 @@ export class WorkspaceSettings extends LitElement {
     this.startStatusPolling();
 
     // Listen for scanned sync peer ID
-    this.boundScanSyncEvent = this.handleScanSyncEvent.bind(this) as EventListener;
+    this.boundScanSyncEvent = this.handleScanSyncEvent.bind(
+      this
+    ) as EventListener;
     globalThis.addEventListener("globalTagScan", this.boundScanSyncEvent);
   }
 
@@ -127,6 +137,7 @@ export class WorkspaceSettings extends LitElement {
     if (this.boundScanSyncEvent) {
       globalThis.removeEventListener("globalTagScan", this.boundScanSyncEvent);
     }
+    this.stopScanningForSync();
   }
 
   private async generateQRCode() {
@@ -155,17 +166,92 @@ export class WorkspaceSettings extends LitElement {
     this.showScanSync = false;
   }
 
-  private navigateToScanForSync() {
-    this.dispatchEvent(
-      new CustomEvent("navigate", {
-        detail: {
-          screen: "qr-scanner",
-          context: { workspaceKey: this.workspaceKey },
-        },
-        bubbles: true,
-        composed: true,
-      })
+  private startScanForSync() {
+    this.isScanningForSync = true;
+  }
+
+  private stopScanningForSync() {
+    if (this.videoElement && this.videoElement.srcObject) {
+      const tracks = (this.videoElement.srcObject as MediaStream).getTracks();
+      tracks.forEach((track) => track.stop());
+      this.videoElement.srcObject = null;
+    }
+
+    if (this.scanningAnimation) {
+      cancelAnimationFrame(this.scanningAnimation);
+      this.scanningAnimation = null;
+    }
+
+    this.isScanningForSync = false;
+  }
+
+  private async beginScanForSync() {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: "environment" },
+      });
+
+      this.videoElement = this.querySelector(
+        "#sync-camera-video"
+      ) as HTMLVideoElement;
+      this.canvasElement = this.querySelector(
+        "#sync-scan-canvas"
+      ) as HTMLCanvasElement;
+
+      if (this.videoElement) {
+        this.videoElement.srcObject = stream;
+
+        const playPromise = this.videoElement.play();
+        if (playPromise !== undefined) {
+          playPromise
+            .then(() => {
+              this.scanForSyncQR();
+            })
+            .catch((error) => {
+              console.error("Error playing video:", error);
+            });
+        } else {
+          this.scanForSyncQR();
+        }
+      }
+    } catch (error) {
+      console.error("Error accessing camera:", error);
+      this.stopScanningForSync();
+    }
+  }
+
+  private scanForSyncQR() {
+    if (!this.isScanningForSync || !this.videoElement || !this.canvasElement)
+      return;
+
+    const ctx = this.canvasElement.getContext("2d");
+    if (!ctx) return;
+
+    this.canvasElement.width = this.videoElement.videoWidth;
+    this.canvasElement.height = this.videoElement.videoHeight;
+
+    ctx.drawImage(this.videoElement, 0, 0);
+
+    const imageData = ctx.getImageData(
+      0,
+      0,
+      this.canvasElement.width,
+      this.canvasElement.height
     );
+    const code = jsQR(imageData.data, imageData.width, imageData.height);
+
+    if (code) {
+      this.syncToPeer = code.data;
+      updateWorkspaceSyncPeerId(this.workspaceKey, code.data).then(() => {
+        this.requestUpdate();
+      });
+
+      this.stopScanningForSync();
+    } else {
+      this.scanningAnimation = requestAnimationFrame(() =>
+        this.scanForSyncQR()
+      );
+    }
   }
 
   private async loadWorkspaceData() {
@@ -467,7 +553,9 @@ export class WorkspaceSettings extends LitElement {
             <label>Local Peer ID QR Code</label>
             ${this.localPeerId
               ? html`
-                  <div style="display: flex; flex-direction: column; align-items: center; gap: 1rem;">
+                  <div
+                    style="display: flex; flex-direction: column; align-items: center; gap: 1rem;"
+                  >
                     ${this.qrCodeDataUrl
                       ? html`
                           <img
@@ -477,7 +565,9 @@ export class WorkspaceSettings extends LitElement {
                           />
                         `
                       : html`<div>Generating QR code...</div>`}
-                    <div style="text-align: center; font-size: 0.85rem; color: #666;">
+                    <div
+                      style="text-align: center; font-size: 0.85rem; color: #666;"
+                    >
                       Scan this QR code from another device to sync
                     </div>
                   </div>
@@ -487,15 +577,50 @@ export class WorkspaceSettings extends LitElement {
 
           <div class="form-group">
             <label>Sync by Scanning Remote QR</label>
-            <button
-              @click=${() => this.navigateToScanForSync()}
-              style="width: 100%; margin-top: 0.5rem;"
-            >
-              Scan Remote Peer QR Code
-            </button>
-            <div class="info">
-              Use the scanner to read a QR code from the remote peer's settings
-            </div>
+            ${this.isScanningForSync
+              ? html`
+                  <div
+                    style="display: flex; flex-direction: column; gap: 1rem;"
+                  >
+                    <div
+                      id="sync-scan-container"
+                      style="position: relative; width: 100%; max-width: 400px; margin: 0 auto;"
+                    >
+                      <video
+                        id="sync-camera-video"
+                        autoplay
+                        playsinline
+                        style="width: 100%; height: auto; display: block; border: 2px solid #ddd; border-radius: 4px;"
+                      ></video>
+                      <canvas
+                        id="sync-scan-canvas"
+                        style="display: none;"
+                      ></canvas>
+                    </div>
+                    <button
+                      @click=${() => this.stopScanningForSync()}
+                      class="danger"
+                      style="width: 100%;"
+                    >
+                      Cancel Scan
+                    </button>
+                  </div>
+                `
+              : html`
+                  <button
+                    @click=${() => {
+                      this.startScanForSync();
+                      setTimeout(() => this.beginScanForSync(), 0);
+                    }}
+                    style="width: 100%; margin-top: 0.5rem;"
+                  >
+                    Scan Remote Peer QR Code
+                  </button>
+                  <div class="info">
+                    Scan a QR code from the remote peer's settings to auto-fill
+                    the sync ID
+                  </div>
+                `}
           </div>
 
           ${this.editingsyncToPeer
@@ -656,11 +781,12 @@ export class WorkspaceSettings extends LitElement {
                 </div>
               `
             : html`
-                <div style="padding: 0.75rem; background: #f9f9f9; border-radius: 4px; margin-bottom: 1rem; color: #666;">
+                <div
+                  style="padding: 0.75rem; background: #f9f9f9; border-radius: 4px; margin-bottom: 1rem; color: #666;"
+                >
                   No categories yet
                 </div>
               `}
-
           ${this.showCategoryForm
             ? html`
                 <div class="stacked-form">
@@ -683,7 +809,7 @@ export class WorkspaceSettings extends LitElement {
                     </button>
                     <button
                       class="danger"
-                      @click=${() => this.showCategoryForm = false}
+                      @click=${() => (this.showCategoryForm = false)}
                     >
                       Cancel
                     </button>
@@ -692,7 +818,7 @@ export class WorkspaceSettings extends LitElement {
               `
             : html`
                 <button
-                  @click=${() => this.showCategoryForm = true}
+                  @click=${() => (this.showCategoryForm = true)}
                   style="width: 100%;"
                 >
                   Add Category
