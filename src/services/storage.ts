@@ -54,6 +54,16 @@ function saveWorkspaceRegistry(): void {
   }
 }
 
+async function sha256(message: string) {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(message);
+  const buf = await window.crypto.subtle.digest("sha-256", data);
+
+  return Array.from(new Uint8Array(buf))
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
+}
+
 // Initialize by loading workspace registry
 export async function initializeYDoc() {
   if (initPromise) return initPromise;
@@ -647,8 +657,10 @@ export async function enableWebRTC(
       return null as any;
     }
 
+
+    const hashedPeerId = await sha256(localPeerId);
     // Create PeerJS instance
-    const peer = new Peer(localPeerId, {
+    const peer = new Peer(hashedPeerId, {
       config: {
         iceServers: [
           { urls: "stun:stun.l.google.com:19302" },
@@ -695,14 +707,16 @@ export async function enableWebRTC(
   }
 }
 
-function connectToPeer(
+async function connectToPeer(
   workspaceKey: string,
   remotePeerId: string,
   myPeerId: string,
   peer: Peer
 ) {
+
+  const hashedPeerId = await sha256(remotePeerId);
   // Connect to room rendezvous peer
-  const roomConn = peer.connect(remotePeerId,
+  const roomConn = peer.connect(hashedPeerId,
     {
       reliable: true,
     }
