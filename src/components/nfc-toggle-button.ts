@@ -1,5 +1,7 @@
 import { LitElement, html } from "lit";
-import { customElement, state } from "lit/decorators.js";
+import { customElement, property, state } from "lit/decorators.js";
+
+let userEnabledBackgroundNfc = false;
 
 @customElement("nfc-toggle-button")
 export class NfcToggleButton extends LitElement {
@@ -7,35 +9,63 @@ export class NfcToggleButton extends LitElement {
     return this;
   }
 
+  @property({ type: Boolean })
+  declare autostart: boolean;
+
   @state()
   declare ndef: NDEFReader | null;
 
   @state()
   declare nfcAbort: AbortController | null;
 
+  @state()
+  declare shouldContinueAfterDisconnect: boolean;
+
   constructor() {
     super();
     this.nfcAbort = (globalThis.nfcabort as AbortController) || null;
     this.ndef = globalThis.nfcreader || null;
+
+    this.shouldContinueAfterDisconnect = this.nfcAbort !== null;
   }
 
-  private async toggleNfc() {
+  connectedCallback(): void {
+    super.connectedCallback();
+    if (this.autostart) {
+      if (this.nfcAbort === null) {
+        this.toggleNfc(false);
+      }
+    }
+  }
+
+  disconnectedCallback(): void {
+    super.disconnectedCallback();
+    if (this.shouldContinueAfterDisconnect) {
+      if (this.nfcAbort) {
+        this.toggleNfc();
+      }
+    }
+  }
+
+  private async toggleNfc(doAlerts: boolean = true) {
     if (this.nfcAbort) {
       this.nfcAbort.abort();
       this.nfcAbort = null;
       this.ndef = null;
       globalThis.nfcreader = null;
       globalThis.nfcabort = null;
-      alert("NFC scanning stopped");
+      this.shouldContinueAfterDisconnect = false;
       this.requestUpdate();
       return;
     }
     try {
-      this.nfcAbort = new AbortController();
-      globalThis.nfcabort = this.nfcAbort;
+      const ac = new AbortController();
 
       const ndef = new NDEFReader();
-      await ndef.scan();
+      await ndef.scan();      
+      globalThis.nfcabort = this.nfcAbort;
+      this.nfcAbort = ac;
+      this.shouldContinueAfterDisconnect = true;
 
       ndef.addEventListener("readingerror", () => {
         alert("Argh! Cannot read data from the NFC tag. Try another one?");
@@ -49,9 +79,10 @@ export class NfcToggleButton extends LitElement {
           })
         );
       });
-    } catch (e) {
-      alert(e);
+    } catch (e) {      
       console.error(e);
+      if (!doAlerts) return;
+      alert(e);
     }
 
     this.requestUpdate();

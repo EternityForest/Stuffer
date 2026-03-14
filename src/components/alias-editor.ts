@@ -245,6 +245,7 @@ export class AliasEditor extends LitElement {
         <div class="alias-editor-content">
           <div class="editor-header">
             <h2>Tag Aliases for: ${this.itemTitle}</h2>
+            <nfc-toggle-button autostart="true"></nfc-toggle-button>
             <button @click=${() => this.goBack()} class="close-btn">×</button>
           </div>
 
@@ -323,6 +324,7 @@ export class AliasEditor extends LitElement {
                         : html`
                             <div class="scanning-container">
                               <video
+                                style="max-height: 8rem"
                                 id="qr-scan-video"
                                 class="qr-video"
                                 playsinline

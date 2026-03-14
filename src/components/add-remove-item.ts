@@ -99,6 +99,8 @@ export class AddRemoveItem extends LitElement {
             Remove Items
           </button>
 
+            <nfc-toggle-button autostart="true"></nfc-toggle-button>
+
           <button class="secondary-btn" @click=${() => this.goBack()}>
             Back
           </button>
@@ -165,7 +167,7 @@ export class AddRemoveItem extends LitElement {
                 <label
                   >QR Scanner
                   <div class="scan-container">
-                    <video id="qr-video"></video>
+                    <video id="qr-video" style="max-height: 8rem"></video>
                     <div class="scanning-indicator">Scanning...</div>
                   </div>
                 </label>

@@ -244,7 +244,7 @@ export class ListBrowser extends LitElement {
 
       <div class="tool-bar">
         <h2>${title}</h2>
-        <nfc-toggle-button></nfc-toggle-button>
+        <nfc-toggle-button autostart="true"></nfc-toggle-button>
 
         ${this.selectingContainer
           ? html`
@@ -314,7 +314,7 @@ export class ListBrowser extends LitElement {
       ${this.isScanning
         ? html`
             <div class="scan-container w-100vw">
-              <video id="qr-video"></video>
+              <video id="qr-video" style="max-height: 8rem"></video>
               <div class="scanning-indicator">Scanning...</div>
             </div>
           `

@@ -360,7 +360,7 @@ export class QrScanner extends LitElement {
           <button @click=${() => this.toggleScanning()}>
             ${this.isScanning ? "Stop Camera" : "Start Camera"}
           </button>
-          <nfc-toggle-button></nfc-toggle-button>
+          <nfc-toggle-button autostart></nfc-toggle-button>
           <button @click=${() => this.goBack()}>Back</button>
         </div>
 
@@ -391,7 +391,7 @@ export class QrScanner extends LitElement {
         ${this.isScanning
           ? html`
               <div id="scan-container">
-                <video id="camera-video" autoplay playsinline></video>
+                <video id="camera-video" autoplay playsinline style="max-height: 8rem"></video>
                 <canvas id="scan-canvas" style="display: none"></canvas>
               </div>
             `

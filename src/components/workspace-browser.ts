@@ -4,7 +4,6 @@ import {
   getItemsOverview,
   getWorkspaceDoc,
   getWorkspacesMap,
-  lookupItemName,
   getCategories,
   getCategoryItemsOverview,
   getDefaultCategory,
