@@ -380,17 +380,19 @@ export class ListBrowser extends LitElement {
               </div>
             `
           : html`
-          <div class="tool-bar">
-          <label>Search:
-              <input
-                type="text"
-                class="search-bar"
-                placeholder="Search items..."
-                .value=${this.searchQuery}
-                @input=${(e: Event) => {
-                  this.searchQuery = (e.target as HTMLInputElement).value;
-                }}
-              /></label></div>
+              <div class="tool-bar">
+                <label
+                  >Search:
+                  <input
+                    type="text"
+                    class="search-bar"
+                    placeholder="Search items..."
+                    .value=${this.searchQuery}
+                    @input=${(e: Event) => {
+                      this.searchQuery = (e.target as HTMLInputElement).value;
+                    }}
+                /></label>
+              </div>
               ${this.mode === "add-to-contents" ||
               this.mode === "remove-from-contents" ||
               this.mode === "create-loadout" ||
@@ -398,63 +400,67 @@ export class ListBrowser extends LitElement {
                 ? html`
                     ${filteredObjects.length > 0
                       ? html`
-                      <div class="flex-row gaps padding"> 
-                          ${filteredObjects.map(
-                            (item) => html`
+                          <div class="flex-row gaps padding">
+                            ${filteredObjects.map(
+                              (item) => html`
                               <div class="card">
                                 <div class="item-info">
                                   <div class="item-name">${item.name}</div>
                                 </div>
                                 <div class="tool-bar">
-                                  ${this.mode === "add-to-contents" ||
-                                  this.mode === "create-loadout"
-                                    ? html`
-                                        ${this.mode === "add-to-contents"
-                                          ? html`
-                                              <button
-                                                class="action-btn add-btn"
-                                                @click=${() =>
-                                                  this.addItemToContainer(
-                                                    item.id,
-                                                    item.name
+                                  ${
+                                    this.mode === "add-to-contents" ||
+                                    this.mode === "create-loadout"
+                                      ? html`
+                                          ${this.mode === "add-to-contents"
+                                            ? html`
+                                                <button
+                                                  class="action-btn add-btn"
+                                                  @click=${() =>
+                                                    this.addItemToContainer(
+                                                      item.id,
+                                                      item.name
+                                                    )}
+                                                >
+                                                  Add
+                                                </button>
+                                              `
+                                            : html`
+                                                <button
+                                                  class="action-btn add-btn"
+                                                  @click=${() =>
+                                                    this.addItemToLoadout(
+                                                      item.id,
+                                                      item.name
+                                                    )}
+                                                >
+                                                  Add
+                                                </button>
+                                              `}
+                                        `
+                                      : html`
+                                          <button
+                                            class="action-btn danger"
+                                            @click=${() =>
+                                              this.mode ===
+                                              "remove-from-contents"
+                                                ? this.removeItemFromContainer(
+                                                    item.id
+                                                  )
+                                                : this.removeItemFromLoadout(
+                                                    item.id
                                                   )}
-                                              >
-                                                Add
-                                              </button>
-                                            `
-                                          : html`
-                                              <button
-                                                class="action-btn add-btn"
-                                                @click=${() =>
-                                                  this.addItemToLoadout(
-                                                    item.id,
-                                                    item.name
-                                                  )}
-                                              >
-                                                Add
-                                              </button>
-                                            `}
-                                      `
-                                    : html`
-                                        <button
-                                          class="action-btn danger"
-                                          @click=${() =>
-                                            this.mode === "remove-from-contents"
-                                              ? this.removeItemFromContainer(
-                                                  item.id
-                                                )
-                                              : this.removeItemFromLoadout(
-                                                  item.id
-                                                )}
-                                        >
-                                          Remove
-                                        </button>
-                                      `}
+                                          >
+                                            Remove
+                                          </button>
+                                        `
+                                  }
                                 </div>
                               </div>
                               </div>
                             `
-                          )}
+                            )}
+                          </div>
                         `
                       : html`
                           <div class="empty-message">
