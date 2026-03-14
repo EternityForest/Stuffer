@@ -657,7 +657,6 @@ export async function enableWebRTC(
       return null as any;
     }
 
-
     const hashedPeerId = await sha256(localPeerId);
     // Create PeerJS instance
     const peer = new Peer(hashedPeerId, {
@@ -713,14 +712,11 @@ async function connectToPeer(
   myPeerId: string,
   peer: Peer
 ) {
-
   const hashedPeerId = await sha256(remotePeerId);
   // Connect to room rendezvous peer
-  const roomConn = peer.connect(hashedPeerId,
-    {
-      reliable: true,
-    }
-  );
+  const roomConn = peer.connect(hashedPeerId, {
+    reliable: true,
+  });
 
   // Set up sync
   setupConnection(workspaceKey, roomConn);
@@ -1319,7 +1315,7 @@ export async function updateLastScanned(
 ) {
   const doc = await getWorkspaceDoc(workspaceKey);
   const objectsMap = doc.getMap("objects") as Y.Map<any>;
-  const  resolvedId= await resolveItemId(workspaceKey, itemId);
+  const resolvedId = await resolveItemId(workspaceKey, itemId);
   const item = objectsMap.get(resolvedId) as Y.Map<any>;
   if (!item) return;
 
@@ -1471,7 +1467,7 @@ export async function getItemCategories(
     const itemsMap = categoryMap.get("items") as Y.Map<any> | undefined;
 
     if (itemsMap && itemsMap.has(itemId)) {
-      const name = category.get("name") as string || "Unknown";
+      const name = (category.get("name") as string) || "Unknown";
       itemCategories.push({ id: categoryId, name });
     }
   }
@@ -1501,22 +1497,32 @@ export async function getCategoryItemsOverview(
   }> = [];
 
   for (const [id, _dummy] of itemsMap) {
-    const item = await getItem(workspaceKey, id);
-    items.push({
-      id,
-      name: item.title as string,
-      createdAt: item.createdAt as string,
-      inContainer:
-        (item.inContainer &&
-          ((await lookupItemName(workspaceKey, item.inContainer)) as string)) ||
-        undefined,
-    });
+    try {
+      // If the item is not found, skip it
+      const item = await getItem(workspaceKey, id);
+      items.push({
+        id,
+        name: item.title as string,
+        createdAt: item.createdAt as string,
+        inContainer:
+          (item.inContainer &&
+            ((await lookupItemName(
+              workspaceKey,
+              item.inContainer
+            )) as string)) ||
+          undefined,
+      });
+    } catch (e) {
+      await removeItemFromCategory(workspaceKey, categoryId, id);
+    }
   }
 
   return items;
 }
 
-export async function getDefaultCategory(workspaceKey: string): Promise<string> {
+export async function getDefaultCategory(
+  workspaceKey: string
+): Promise<string> {
   const doc = await getWorkspaceDoc(workspaceKey);
   const metadataMap = doc.getMap("metadata") as Y.Map<any>;
   return (metadataMap.get("defaultCategory") as string) || "all";
