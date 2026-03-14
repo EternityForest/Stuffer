@@ -34,6 +34,10 @@ export class AddRemoveItem extends LitElement {
   declare mode: "add" | "remove";
 
   @state()
+  declare searchQuery: string;
+  private prevSearchQuery = "";
+
+  @state()
   declare toastMessage: string;
 
   @state()
@@ -55,6 +59,8 @@ export class AddRemoveItem extends LitElement {
     this.mode = "add";
     this.toastMessage = "";
     this.toastType = "success";
+        this.searchQuery = "";
+
   }
 
   disconnectedCallback() {

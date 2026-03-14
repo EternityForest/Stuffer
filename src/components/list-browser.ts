@@ -15,7 +15,7 @@ import {
   resolveItemId,
   getCategories,
   getCategoryItemsOverview,
-  updateLastScanned
+  updateLastScanned,
 } from "../services/storage.js";
 import type { ItemData } from "../services/storage.js";
 import jsQR from "jsqr";
@@ -72,6 +72,11 @@ export class ListBrowser extends LitElement {
   @state()
   declare selectedCategory: string;
 
+  @state()
+  declare searchQuery: string;
+
+  private prevSearchQuery = "";
+
   private videoElement: HTMLVideoElement | null = null;
   private scanningInterval: number | null = null;
   private boundGlobalTagScan: (event: Event) => void = () => {};
@@ -100,6 +105,7 @@ export class ListBrowser extends LitElement {
     this.containerName = "";
     this.categories = [];
     this.selectedCategory = "all";
+    this.searchQuery = "";
   }
 
   disconnectedCallback() {
@@ -187,7 +193,7 @@ export class ListBrowser extends LitElement {
         this.items = loadout.contents;
       } else {
         // For add-to-contents and create-loadout modes, load all items in workspace
-        if (this.selectedCategory !== "all") {
+        if (this.selectedCategory !== "all" && this.searchQuery.length == 0) {
           this.items = await getCategoryItemsOverview(
             this.workspaceKey,
             this.selectedCategory
@@ -226,14 +232,24 @@ export class ListBrowser extends LitElement {
   }
 
   render() {
-    const title =
-      this.mode === "add-to-contents"
-        ? "Add Items to Container"
-        : this.mode === "remove-from-contents"
-        ? "Remove Items from Container"
-        : this.mode === "create-loadout"
-        ? "Create Loadout"
-        : "Edit Loadout";
+    if (this.prevSearchQuery.length > 0 != this.searchQuery.length > 0) {
+      this.prevSearchQuery = this.searchQuery;
+      this.loadItems();
+    }
+
+    const filteredObjects = this.items.filter((obj) =>
+      obj.name.toLowerCase().includes(this.searchQuery.toLowerCase())
+    );
+
+    const title = this.selectingContainer
+      ? "Select Container"
+      : this.mode === "add-to-contents"
+      ? "Add Items to Container"
+      : this.mode === "remove-from-contents"
+      ? "Remove Items from Container"
+      : this.mode === "create-loadout"
+      ? "Create Loadout"
+      : "Edit Loadout";
 
     return html`
       ${this.toastMessage
@@ -289,7 +305,7 @@ export class ListBrowser extends LitElement {
         : ""}
       ${this.categories.length > 0
         ? html`
-            <div class="tool-bar">
+            <div class="tool- "bar">
               <button
                 @click=${() => (this.selectedCategory = "all")}
                 class="${this.selectedCategory === "all" ? "highlight" : ""}"
@@ -319,7 +335,7 @@ export class ListBrowser extends LitElement {
             </div>
           `
         : ""}
-      <div class="flex-row gaps padding">
+      <div>
         ${this.selectingContainer
           ? html`
               <div class="container-selector">
@@ -364,14 +380,26 @@ export class ListBrowser extends LitElement {
               </div>
             `
           : html`
+          <div class="tool-bar">
+          <label>Search:
+              <input
+                type="text"
+                class="search-bar"
+                placeholder="Search items..."
+                .value=${this.searchQuery}
+                @input=${(e: Event) => {
+                  this.searchQuery = (e.target as HTMLInputElement).value;
+                }}
+              /></label></div>
               ${this.mode === "add-to-contents" ||
               this.mode === "remove-from-contents" ||
               this.mode === "create-loadout" ||
               this.mode === "edit-loadout"
                 ? html`
-                    ${this.items.length > 0
+                    ${filteredObjects.length > 0
                       ? html`
-                          ${this.items.map(
+                      <div class="flex-row gaps padding"> 
+                          ${filteredObjects.map(
                             (item) => html`
                               <div class="card">
                                 <div class="item-info">
@@ -423,6 +451,7 @@ export class ListBrowser extends LitElement {
                                         </button>
                                       `}
                                 </div>
+                              </div>
                               </div>
                             `
                           )}

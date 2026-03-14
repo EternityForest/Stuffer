@@ -25,6 +25,8 @@ export class WorkspaceBrowser extends LitElement {
   @state()
   declare searchQuery: string;
 
+  private prevSearchQuery = "";
+
   @state()
   declare objects: Array<{
     id: string;
@@ -104,12 +106,12 @@ export class WorkspaceBrowser extends LitElement {
 
   private async loadItems() {
     if (!this.workspaceKey) return;
-      
-    if(this.selectedCategory === ""){
-    this.selectedCategory = await getDefaultCategory(this.workspaceKey);
+
+    if (this.selectedCategory === "") {
+      this.selectedCategory = await getDefaultCategory(this.workspaceKey);
     }
     try {
-      if (this.selectedCategory !== "all") {
+      if (this.selectedCategory !== "all" && (this.searchQuery.length == 0)) {
         this.objects = await getCategoryItemsOverview(
           this.workspaceKey,
           this.selectedCategory
@@ -147,6 +149,11 @@ export class WorkspaceBrowser extends LitElement {
   }
 
   render() {
+    if ((this.prevSearchQuery.length > 0) != (this.searchQuery.length > 0)) {
+      this.prevSearchQuery = this.searchQuery;
+      this.loadItems();
+    }
+
     const filteredObjects = this.objects.filter((obj) =>
       obj.name.toLowerCase().includes(this.searchQuery.toLowerCase())
     );
