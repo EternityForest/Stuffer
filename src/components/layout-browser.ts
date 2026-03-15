@@ -90,6 +90,7 @@ export class LayoutBrowser extends LitElement {
     return html`
       <button class="back-btn" @click=${this.goBack}>Back</button>
       <div class="title">Select Sticker Sheet Layout</div>
+      <p class="help">Ensure that print margins and scaling are disabled for proper alignment</p>
       <div class="layout-grid">
         ${(layouts as StickerLayout[]).map(
           (layout) => html`
