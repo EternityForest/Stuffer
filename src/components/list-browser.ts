@@ -48,6 +48,12 @@ export class ListBrowser extends LitElement {
   @state()
   declare toastType: "success" | "error";
 
+  @state()
+  declare contentsItems: Array<{ id: string; name: string }>;
+
+  @state()
+  declare contentsFilter: string;
+
   private previousMode:
     | "add-to-contents"
     | "remove-from-contents"
@@ -65,6 +71,48 @@ export class ListBrowser extends LitElement {
     this.containerName = "";
     this.toastMessage = "";
     this.toastType = "success";
+    this.contentsItems = [];
+    this.contentsFilter = "";
+  }
+
+  updated(changedProperties: Map<string, any>) {
+    if (
+      (changedProperties.has("containerId") || changedProperties.has("mode")) &&
+      !this.selectingContainer
+    ) {
+      this.loadContainerData();
+    }
+  }
+
+  private async loadContainerData() {
+    if (!this.workspaceKey || !this.containerId) return;
+
+    try {
+      const item = await getItem(this.workspaceKey, this.containerId);
+      this.containerName = item.title;
+
+      if (this.mode === "remove-from-contents") {
+        this.contentsItems = await getItemContents(
+          this.workspaceKey,
+          this.containerId
+        );
+      }
+    } catch (error) {
+      console.error("Failed to load container data:", error);
+      this.containerName = "";
+      this.contentsItems = [];
+    }
+  }
+
+  private getFilteredContents() {
+    const filter = this.contentsFilter.toLowerCase();
+    return this.contentsItems.filter((item) =>
+      item.name.toLowerCase().includes(filter)
+    );
+  }
+
+  private filterContents(e: Event) {
+    this.contentsFilter = (e.target as HTMLInputElement).value;
   }
 
   render() {
@@ -87,6 +135,67 @@ export class ListBrowser extends LitElement {
             Cancel
           </button>
         </div>
+      `;
+    }
+
+    // For remove-from-contents mode, show container contents instead of all items
+    if (this.mode === "remove-from-contents" && this.contentsItems.length > 0) {
+      return html`
+        ${this.toastMessage
+          ? html`
+              <div class="toast ${this.toastType}">${this.toastMessage}</div>
+            `
+          : ""}
+
+        <div class="tool-bar">
+          <h2>Remove Items from Container</h2>
+          <div>
+            <strong>Container:</strong> ${this.containerName}
+          </div>
+          <button @click=${() => this.toggleMode()}>
+            Switch to Add
+          </button>
+          <button @click=${() => this.startContainerSelection()}>
+            Select Different Container
+          </button>
+          <button @click=${() => this.goBack()}>Back</button>
+        </div>
+
+        <div class="tool-bar">
+          <label
+            >Search:
+            <input
+              type="text"
+              class="search-bar"
+              placeholder="Search items..."
+              @input=${(e: Event) => this.filterContents(e)}
+            /></label>
+        </div>
+
+        <div class="flex-row gaps padding">
+          ${this.getFilteredContents().map(
+            (item) => html`
+              <div class="card">
+                <div class="item-info">
+                  <div class="item-name">${item.name}</div>
+                </div>
+                <div class="tool-bar">
+                  <button
+                    class="action-btn danger"
+                    @click=${() => this.removeItemFromContainer(item.id)}
+                  >
+                    Remove
+                  </button>
+                </div>
+              </div>
+            `
+          )}
+        </div>
+        ${this.getFilteredContents().length === 0
+          ? html`
+              <div class="empty-message">No items in container</div>
+            `
+          : ""}
       `;
     }
 
@@ -148,7 +257,8 @@ export class ListBrowser extends LitElement {
       return (itemId: string, itemName: string) =>
         this.addItemToContainer(itemId, itemName);
     } else if (this.mode === "remove-from-contents") {
-      return (itemId: string) => this.removeItemFromContainer(itemId);
+      return (itemId: string, itemName: string) =>
+        this.addItemToContainer(itemId, itemName);
     } else if (this.mode === "create-loadout") {
       return (itemId: string, itemName: string) =>
         this.addItemToNewLoadout(itemId, itemName);
@@ -179,6 +289,7 @@ export class ListBrowser extends LitElement {
         itemId
       );
       this.showToast("✓ Removed", "success");
+      this.loadContainerData();
     } catch (error) {
       console.error("Failed to remove item from container:", error);
       this.showToast("Failed to remove item", "error");
@@ -226,23 +337,6 @@ export class ListBrowser extends LitElement {
     this.containerName = containerName;
     this.selectingContainer = false;
     this.previousMode = null;
-  }
-
-  private async loadContainerName() {
-    if (!this.workspaceKey || !this.containerId) return;
-    try {
-      const item = await getItem(this.workspaceKey, this.containerId);
-      this.containerName = item.title;
-    } catch (error) {
-      console.error("Failed to load container name:", error);
-      this.containerName = "";
-    }
-  }
-
-  updated(changedProperties: Map<string, any>) {
-    if (changedProperties.has("containerId") && !this.selectingContainer) {
-      this.loadContainerName();
-    }
   }
 
   private goBack() {

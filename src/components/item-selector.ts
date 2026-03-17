@@ -154,8 +154,8 @@ export class ItemSelector extends LitElement {
       if (this.onlyShowLoadouts) {
         this.items = allItems.filter((item) => item.type === "loadout");
       } else {
-        // Show only normal items, not loadouts
-        this.items = allItems.filter((item) => item.type !== "loadout");
+        // Show all items when not filtering for loadouts
+        this.items = allItems;
       }
     } catch (error) {
       console.error("Failed to load items:", error);

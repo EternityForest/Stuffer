@@ -24,6 +24,7 @@ import {
 import type { ItemData, ItemContentRecord } from "../services/storage.js";
 import { compressImage } from "../services/imageCompression.js";
 import "../components/alias-editor.js";
+import "./item-selector.js";
 
 @customElement("object-inspect")
 export class ObjectInspect extends LitElement {
@@ -108,6 +109,9 @@ export class ObjectInspect extends LitElement {
   declare showAliasEditor: boolean;
 
   @state()
+  declare showLoadoutSelector: boolean;
+
+  @state()
   declare categories: Array<{ id: string; name: string }>;
 
   @state()
@@ -162,6 +166,7 @@ export class ObjectInspect extends LitElement {
     this.inContainer = null;
     this.locationTitle = "";
     this.showAliasEditor = false;
+    this.showLoadoutSelector = false;
     this.categories = [];
     this.itemCategories = [];
 
@@ -528,6 +533,28 @@ export class ObjectInspect extends LitElement {
           : ""
       }
 
+      ${
+        this.showLoadoutSelector
+          ? html`
+              <div style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 1000;">
+                <div style="background: white; padding: 1rem; border-radius: 8px; max-width: 90%; max-height: 90%; overflow: auto; max-width: 500px;">
+                  <item-selector
+                    workspaceKey="${this.workspaceKey}"
+                    buttonLabel="Select"
+                    onlyShowLoadouts="true"
+                    .callback=${(loadoutId: string) => this.selectLoadoutFromSelector(loadoutId)}
+                  ></item-selector>
+                  <div class="tool-bar" style="margin-top: 1rem;">
+                    <button @click=${() => (this.showLoadoutSelector = false)}>
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              </div>
+            `
+          : ""
+      }
+
       <div class="stacked-form">
 
 
@@ -574,22 +601,14 @@ export class ObjectInspect extends LitElement {
             .value=${this.objectId}
           /></label>
         </div>
-          <label>Loadout
-          <select @change=${this.selectLoadout}>
-            <option value="" ?selected=${!this.selectedLoadout}>None</option>
-            ${this.loadouts.map(
-              (loadout) => html`
-                <option
-                  value="${loadout.id}"
-                  ?selected=${this.selectedLoadout === loadout.id}
-                >
-                  ${loadout.title}
-                </option>
-              `
-            )}
-          </select>
-          </label>
           <div class="tool-bar">
+            <label>Loadout: ${this.selectedLoadout ? (this.loadouts.find(l => l.id === this.selectedLoadout)?.title || 'Unknown') : 'None'}</label>
+            <button @click=${() => (this.showLoadoutSelector = true)}>
+              Set Loadout
+            </button>
+            <button @click=${() => this.clearLoadout()}>
+              Clear Loadout
+            </button>
             <button @click=${() => this.setLoadoutFromContents()}>
               Save Contents as Loadout
             </button>
@@ -954,6 +973,38 @@ export class ObjectInspect extends LitElement {
     } catch (error) {
       console.error("Failed to create loadout from contents:", error);
       alert("Failed to create loadout from contents");
+    }
+  }
+
+  private selectLoadoutFromSelector(loadoutId: string) {
+    this.showLoadoutSelector = false;
+    try {
+      updateItemProperty(
+        this.workspaceKey,
+        this.objectId,
+        "selectedLoadout",
+        loadoutId
+      );
+      this.selectedLoadout = loadoutId;
+      this.checkLoadoutMismatch();
+    } catch (error) {
+      console.error("Failed to select loadout:", error);
+    }
+  }
+
+  private clearLoadout() {
+    try {
+      updateItemProperty(
+        this.workspaceKey,
+        this.objectId,
+        "selectedLoadout",
+        null
+      );
+      this.selectedLoadout = null;
+      this.missingItems = [];
+      this.extraItems = [];
+    } catch (error) {
+      console.error("Failed to clear loadout:", error);
     }
   }
 
