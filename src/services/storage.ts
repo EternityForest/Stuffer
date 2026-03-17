@@ -143,7 +143,6 @@ export async function createWorkspace(name: string) {
   const doc = await getWorkspaceDoc(workspaceKey);
   const metadataMap = doc.getMap("metadata");
   doc.getMap("objects"); // Initialize objects map
-  doc.getMap("loadouts"); // Initialize loadouts map
   doc.getMap("tagAliases"); // Initialize tagAliases map
   doc.getMap("categories"); // Initialize categories map
 
@@ -187,7 +186,8 @@ export async function deleteWorkspace(key: string) {
 export async function addItem(
   workspaceKey: string,
   itemName: string,
-  uuid?: string
+  uuid?: string,
+  type: "normal" | "loadout" = "normal"
 ) {
   const doc = await getWorkspaceDoc(workspaceKey);
   const objectsMap = doc.getMap("objects") as Y.Map<any>;
@@ -199,6 +199,7 @@ export async function addItem(
   item.set("description", "");
   item.set("contents", new Y.Map());
   item.set("amountUpdates", new Y.Array());
+  item.set("type", type);
 
   objectsMap.set(itemId, item);
   return itemId;
@@ -212,6 +213,7 @@ export async function getItemsOverview(workspaceKey: string) {
     name: string;
     createdAt: string;
     inContainer?: string;
+    type: "normal" | "loadout";
   }> = [];
 
   for (const [id, item] of objectsMap) {
@@ -225,6 +227,7 @@ export async function getItemsOverview(workspaceKey: string) {
           workspaceKey,
           item.get("inContainer")
         )) as string),
+      type: (item.get("type") as "normal" | "loadout") || "normal",
     });
   }
 
@@ -266,6 +269,9 @@ export interface ItemData {
   // If this is set, it means that any contents that haven't
   // Been scanned since this date should be rechecked
   needRecheckContentsAfter: string | null;
+  // Type of item: "normal" (physical object) or "loadout"
+  // (abstract list that can hold many items)
+  type: "normal" | "loadout";
 }
 
 // Find real item id from alias
@@ -310,6 +316,7 @@ export async function getItem(
     needRecheckContentsAfter: item.get("needRecheckContentsAfter") as
       | string
       | null,
+    type: (item.get("type") as "normal" | "loadout") || "normal",
   };
 }
 
@@ -424,23 +431,20 @@ export async function createLoadout(
   description: string = "",
   contents: Array<{ itemId: string }> = []
 ) {
+  // Create loadout as an item with type="loadout"
+  const loadoutId = await addItem(workspaceKey, title, undefined, "loadout");
   const doc = await getWorkspaceDoc(workspaceKey);
-  const loadoutsMap = doc.getMap("loadouts") as Y.Map<any>;
-  const loadoutId = generateItemId();
+  const objectsMap = doc.getMap("objects") as Y.Map<any>;
+  const loadout = objectsMap.get(loadoutId) as Y.Map<any>;
 
-  const loadout = new Y.Map();
-  loadout.set("title", title);
   loadout.set("description", description);
-  loadout.set("createdAt", new Date().toISOString());
 
-  const loadoutContents = new Y.Map();
+  // Add contents to the loadout (doesn't remove from original containers)
+  const contentsMap = loadout.get("contents") as Y.Map<any>;
   contents.forEach(({ itemId }) => {
     const content = new Y.Map();
-    loadoutContents.set(itemId, content);
+    contentsMap.set(itemId, content);
   });
-
-  loadout.set("contents", loadoutContents);
-  loadoutsMap.set(loadoutId, loadout);
 
   return loadoutId;
 }
@@ -452,7 +456,7 @@ export async function saveObjectAsLoadout(
   description: string = ""
 ) {
   const objectContents = await getItemContents(workspaceKey, objectId);
-  return createLoadout(
+  const loadoutId = await createLoadout(
     workspaceKey,
     title,
     description,
@@ -460,13 +464,18 @@ export async function saveObjectAsLoadout(
       itemId: c.id,
     }))
   );
+
+  // Set this loadout as the selected loadout for the object
+  await updateItemProperty(workspaceKey, objectId, "selectedLoadout", loadoutId);
+
+  return loadoutId;
 }
 
 export async function getLoadouts(workspaceKey: string) {
   const workspace = await getWorkspaceDoc(workspaceKey);
   if (!workspace) throw new Error("Workspace not found");
 
-  const loadoutsMap = workspace.getMap("loadouts") as Y.Map<any>;
+  const objectsMap = workspace.getMap("objects") as Y.Map<any>;
   const loadouts: Array<{
     id: string;
     title: string;
@@ -475,34 +484,38 @@ export async function getLoadouts(workspaceKey: string) {
     createdAt: string;
   }> = [];
 
-  loadoutsMap.forEach((loadout, id) => {
-    const contentsMap = (loadout as Y.Map<any>).get("contents") as Y.Map<any>;
-    loadouts.push({
-      id,
-      title: (loadout as Y.Map<any>).get("title") as string,
-      description: (loadout as Y.Map<any>).get("description") as string,
-      itemCount: contentsMap ? contentsMap.size : 0,
-      createdAt: (loadout as Y.Map<any>).get("createdAt") as string,
-    });
-  });
+  for (const [id, item] of objectsMap) {
+    if ((item as Y.Map<any>).get("type") === "loadout") {
+      const contentsMap = (item as Y.Map<any>).get("contents") as Y.Map<any>;
+      loadouts.push({
+        id,
+        title: (item as Y.Map<any>).get("title") as string,
+        description: (item as Y.Map<any>).get("description") as string,
+        itemCount: contentsMap ? contentsMap.size : 0,
+        createdAt: (item as Y.Map<any>).get("createdAt") as string,
+      });
+    }
+  }
 
   return loadouts;
 }
 
 export async function getLoadout(workspaceKey: string, loadoutId: string) {
   const doc = await getWorkspaceDoc(workspaceKey);
-  const loadoutsMap = doc.getMap("loadouts") as Y.Map<any>;
-  const loadout = loadoutsMap.get(loadoutId) as Y.Map<any>;
+  const objectsMap = doc.getMap("objects") as Y.Map<any>;
+  const loadout = objectsMap.get(loadoutId) as Y.Map<any>;
   if (!loadout) throw new Error("Loadout not found");
 
   const contentsMap = loadout.get("contents") as Y.Map<any>;
   const contents: Array<{ id: string; name: string }> = [];
 
-  for (const [id, _content] of contentsMap) {
-    contents.push({
-      id,
-      name: await lookupItemName(workspaceKey, id),
-    });
+  if (contentsMap) {
+    for (const [id, _content] of contentsMap) {
+      contents.push({
+        id,
+        name: await lookupItemName(workspaceKey, id),
+      });
+    }
   }
 
   return {
@@ -520,12 +533,7 @@ export async function updateLoadoutProperty(
   property: string,
   value: any
 ) {
-  const doc = await getWorkspaceDoc(workspaceKey);
-  const loadoutsMap = doc.getMap("loadouts") as Y.Map<any>;
-  const loadout = loadoutsMap.get(loadoutId) as Y.Map<any>;
-  if (!loadout) throw new Error("Loadout not found");
-
-  loadout.set(property, value);
+  return updateItemProperty(workspaceKey, loadoutId, property, value);
 }
 
 export async function addItemToLoadout(
@@ -534,24 +542,20 @@ export async function addItemToLoadout(
   itemId: string
 ) {
   const doc = await getWorkspaceDoc(workspaceKey);
-  const loadoutsMap = doc.getMap("loadouts") as Y.Map<any>;
-  const loadout = loadoutsMap.get(loadoutId) as Y.Map<any>;
+  const objectsMap = doc.getMap("objects") as Y.Map<any>;
+  const loadout = objectsMap.get(loadoutId) as Y.Map<any>;
   if (!loadout) throw new Error("Loadout not found");
 
-  // Remove item from any other loadouts first
-  loadoutsMap.forEach((otherLoadout) => {
-    const otherContentsMap = (otherLoadout as Y.Map<any>).get(
-      "contents"
-    ) as Y.Map<any>;
-    if (otherContentsMap && otherContentsMap.has(itemId)) {
-      otherContentsMap.delete(itemId);
-    }
-  });
+  // Unlike normal containers, items can be in many loadouts
+  // So we don't remove them from other loadouts
+  let contentsMap = loadout.get("contents") as Y.Map<any>;
 
-  const contentsMap = loadout.get("contents") as Y.Map<any>;
+  if (!contentsMap) {
+    contentsMap = new Y.Map();
+    loadout.set("contents", contentsMap);
+  }
 
   const content = new Y.Map();
-
   contentsMap.set(itemId, content);
 }
 
@@ -561,18 +565,18 @@ export async function removeItemFromLoadout(
   itemId: string
 ) {
   const doc = await getWorkspaceDoc(workspaceKey);
-  const loadoutsMap = doc.getMap("loadouts") as Y.Map<any>;
-  const loadout = loadoutsMap.get(loadoutId) as Y.Map<any>;
+  const objectsMap = doc.getMap("objects") as Y.Map<any>;
+  const loadout = objectsMap.get(loadoutId) as Y.Map<any>;
   if (!loadout) throw new Error("Loadout not found");
 
   const contentsMap = loadout.get("contents") as Y.Map<any>;
-  contentsMap.delete(itemId);
+  if (contentsMap) {
+    contentsMap.delete(itemId);
+  }
 }
 
 export async function deleteLoadout(workspaceKey: string, loadoutId: string) {
-  const doc = await getWorkspaceDoc(workspaceKey);
-  const loadoutsMap = doc.getMap("loadouts") as Y.Map<any>;
-  loadoutsMap.delete(loadoutId);
+  return deleteItem(workspaceKey, loadoutId);
 }
 
 export async function compareContentsToLoadout(
@@ -1494,6 +1498,7 @@ export async function getCategoryItemsOverview(
     name: string;
     createdAt: string;
     inContainer?: string;
+    type: "normal" | "loadout";
   }> = [];
 
   for (const [id, _dummy] of itemsMap) {
@@ -1511,6 +1516,7 @@ export async function getCategoryItemsOverview(
               item.inContainer
             )) as string)) ||
           undefined,
+        type: item.type,
       });
     } catch (e) {
       await removeItemFromCategory(workspaceKey, categoryId, id);

@@ -589,6 +589,11 @@ export class ObjectInspect extends LitElement {
             )}
           </select>
           </label>
+          <div class="tool-bar">
+            <button @click=${() => this.setLoadoutFromContents()}>
+              Save Contents as Loadout
+            </button>
+          </div>
 
         <div class="amount-section">
           <h3>Amount Tracking</h3>
@@ -933,6 +938,22 @@ export class ObjectInspect extends LitElement {
     } catch (error) {
       console.error("Failed to save as loadout:", error);
       alert("Failed to save as loadout");
+    }
+  }
+
+  private setLoadoutFromContents() {
+    const title = prompt("Enter loadout name:");
+    if (!title) return;
+
+    const description = prompt("Enter loadout description (optional):") || "";
+
+    try {
+      saveObjectAsLoadout(this.workspaceKey, this.objectId, title, description);
+      this.loadLoadouts();
+      alert(`✓ Created loadout "${title}" from contents`);
+    } catch (error) {
+      console.error("Failed to create loadout from contents:", error);
+      alert("Failed to create loadout from contents");
     }
   }
 

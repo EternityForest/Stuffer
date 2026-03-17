@@ -7,6 +7,7 @@ import {
   getCategories,
   getCategoryItemsOverview,
   getDefaultCategory,
+  createLoadout,
 } from "../services/storage.js";
 import "./nfc-toggle-button.js";
 
@@ -175,6 +176,7 @@ export class WorkspaceBrowser extends LitElement {
         <nfc-toggle-button></nfc-toggle-button>
         <button @click=${() => this.navigateToQRSheets()}>QR Sheets</button>
         <button @click=${() => this.navigateToLoadouts()}>Loadouts</button>
+        <button @click=${() => this.addLoadout()}>Add Loadout</button>
         <button @click=${() => this.navigateToSettings()}>Settings</button>
         <button @click=${() => this.dispatchNavigate("workspace-selector")}>
           Back
@@ -271,6 +273,21 @@ export class WorkspaceBrowser extends LitElement {
         composed: true,
       })
     );
+  }
+
+  private addLoadout() {
+    const title = prompt("Enter loadout name:");
+    if (!title) return;
+
+    const description = prompt("Enter loadout description (optional):") || "";
+
+    try {
+      createLoadout(this.workspaceKey, title, description, []);
+      alert(`✓ Created loadout "${title}"`);
+    } catch (error) {
+      console.error("Failed to create loadout:", error);
+      alert("Failed to create loadout");
+    }
   }
 
   private navigateToSettings() {
