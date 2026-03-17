@@ -541,7 +541,7 @@ export class ObjectInspect extends LitElement {
                   <item-selector
                     workspaceKey="${this.workspaceKey}"
                     buttonLabel="Select"
-                    onlyShowLoadouts="true"
+                    .onlyShowLoadouts=${true}
                     .callback=${(loadoutId: string) => this.selectLoadoutFromSelector(loadoutId)}
                   ></item-selector>
                   <div class="tool-bar" style="margin-top: 1rem;">

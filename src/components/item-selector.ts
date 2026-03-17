@@ -30,6 +30,9 @@ export class ItemSelector extends LitElement {
   declare onlyShowLoadouts: boolean;
 
   @property()
+  declare excludeLoadouts: boolean;
+
+  @property()
   declare callback: ItemSelectorCallback | null;
 
   @state()
@@ -65,6 +68,7 @@ export class ItemSelector extends LitElement {
     this.workspaceKey = "";
     this.buttonLabel = "Select";
     this.onlyShowLoadouts = false;
+    this.excludeLoadouts = false;
     this.callback = null;
     this.items = [];
     this.isScanning = false;
@@ -153,8 +157,11 @@ export class ItemSelector extends LitElement {
       // Filter for loadouts if requested
       if (this.onlyShowLoadouts) {
         this.items = allItems.filter((item) => item.type === "loadout");
+      } else if (this.excludeLoadouts) {
+        // Show only normal items, exclude loadouts
+        this.items = allItems.filter((item) => item.type !== "loadout");
       } else {
-        // Show all items when not filtering for loadouts
+        // Show all items when not filtering
         this.items = allItems;
       }
     } catch (error) {

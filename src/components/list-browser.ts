@@ -126,7 +126,7 @@ export class ListBrowser extends LitElement {
         <item-selector
           workspaceKey="${this.workspaceKey}"
           buttonLabel="Select"
-          onlyShowLoadouts="false"
+          .onlyShowLoadouts=${false}
           .callback=${(itemId: string, itemName: string) =>
             this.selectContainer(itemId, itemName)}
         ></item-selector>
@@ -246,7 +246,7 @@ export class ListBrowser extends LitElement {
       <item-selector
         workspaceKey="${this.workspaceKey}"
         buttonLabel="${buttonLabel}"
-        onlyShowLoadouts="false"
+        .onlyShowLoadouts=${false}
         .callback=${this.getItemCallback()}
       ></item-selector>
     `;
