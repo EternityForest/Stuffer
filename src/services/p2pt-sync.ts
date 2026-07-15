@@ -21,7 +21,6 @@ import { Observable } from "lib0/observable";
 // p2pt types
 type P2PTPeer = {
   id: string;
-  peerId: string;
 };
 
 // Message type codes
@@ -120,8 +119,8 @@ function parseMessage(
 ): { type: number; payload: Uint8Array } | null {
   if (data.length < 8) return null;
   const view = new DataView(data.buffer, data.byteOffset);
-  const type = view.getUint32(0, false); // Big-endian
-  const length = view.getUint32(4, false);
+  const type = view.getUint32(0, true); // Little-endian
+  const length = view.getUint32(4, true);
   if (data.length < 8 + length) return null;
   const payload = data.slice(8, 8 + length);
   return { type, payload };
@@ -133,8 +132,8 @@ function parseMessage(
 function createMessage(type: number, payload: Uint8Array): Uint8Array {
   const result = new Uint8Array(8 + payload.length);
   const view = new DataView(result.buffer, result.byteOffset);
-  view.setUint32(0, type, false); // Big-endian
-  view.setUint32(4, payload.length, false);
+  view.setUint32(0, type, true); // Little-endian
+  view.setUint32(4, payload.length, true);
   result.set(payload, 8);
   return result;
 }
@@ -295,12 +294,12 @@ export class P2PTSyncProvider extends Observable<any> {
     if (!data) return;
 
     console.log(
-      `[P2PT] Peer connected to ${syncKey.substring(0, 8)}...: ${peer.peerId}`,
+      `[P2PT] Peer connected to ${syncKey.substring(0, 8)}...: ${peer.id}`,
     );
 
     // Check if we already have this peer
-    if (data.peers.has(peer.peerId)) {
-      console.log(`[P2PT] Peer already exists: ${peer.peerId}`);
+    if (data.peers.has(peer.id)) {
+      console.log(`[P2PT] Peer already exists: ${peer.id}`);
       return;
     }
 
@@ -312,19 +311,19 @@ export class P2PTSyncProvider extends Observable<any> {
       validationTimer: null,
     };
 
-    data.peers.set(peer.peerId, conn);
-    data.peerSyncKey.set(peer.peerId, syncKey);
+    data.peers.set(peer.id, conn);
+    data.peerSyncKey.set(peer.id, syncKey);
 
     // Set validation timeout
     conn.validationTimer = window.setTimeout(() => {
       if (!conn.validated) {
-        console.log(`[P2PT] Peer validation timeout: ${peer.peerId}`);
-        this.removePeer(syncKey, peer.peerId);
+        console.log(`[P2PT] Peer validation timeout: ${peer.id}`);
+        this.removePeer(syncKey, peer.id);
       }
     }, PEER_VALIDATION_TIMEOUT);
 
     // Send authentication challenge
-    await this.sendChallenge(syncKey, peer.peerId);
+    await this.sendChallenge(syncKey, peer.id);
 
     this.notifyStatusChange();
   }
@@ -334,9 +333,9 @@ export class P2PTSyncProvider extends Observable<any> {
    */
   private handlePeerClose(syncKey: string, peer: P2PTPeer): void {
     console.log(
-      `[P2PT] Peer disconnected from ${syncKey.substring(0, 8)}...: ${peer.peerId}`,
+      `[P2PT] Peer disconnected from ${syncKey.substring(0, 8)}...: ${peer.id}`,
     );
-    this.removePeer(syncKey, peer.peerId);
+    this.removePeer(syncKey, peer.id);
   }
 
   /**
@@ -370,9 +369,9 @@ export class P2PTSyncProvider extends Observable<any> {
     const data = this.syncKeyData.get(syncKey);
     if (!data) return;
 
-    const conn = data.peers.get(peer.peerId);
+    const conn = data.peers.get(peer.id);
     if (!conn) {
-      console.log(`[P2PT] Message from unknown peer: ${peer.peerId}`);
+      console.log(`[P2PT] Message from unknown peer: ${peer.id}`);
       return;
     }
 
@@ -410,7 +409,7 @@ export class P2PTSyncProvider extends Observable<any> {
     }
 
     // Process the message
-    await this.processMessage(syncKey, peer.peerId, parsed);
+    await this.processMessage(syncKey, peer.id, parsed);
   }
 
   /**
