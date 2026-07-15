@@ -82,6 +82,9 @@ export class WorkspaceSettings extends LitElement {
   @state()
   declare isScanningForSync: boolean;
 
+  @state()
+  declare newSyncKeyInput: string;
+
   private statusInterval: number | null = null;
   private fileInput: HTMLInputElement | null = null;
   private boundScanSyncEvent: EventListener | null = null;
@@ -109,6 +112,7 @@ export class WorkspaceSettings extends LitElement {
     this.defaultCategory = "all";
     this.showScanSync = false;
     this.isScanningForSync = false;
+    this.newSyncKeyInput = "";
   }
 
   async connectedCallback() {
@@ -120,7 +124,7 @@ export class WorkspaceSettings extends LitElement {
 
     // Listen for scanned sync peer ID
     this.boundScanSyncEvent = this.handleScanSyncEvent.bind(
-      this
+      this,
     ) as EventListener;
     globalThis.addEventListener("globalTagScan", this.boundScanSyncEvent);
   }
@@ -174,10 +178,10 @@ export class WorkspaceSettings extends LitElement {
       });
 
       this.videoElement = this.querySelector(
-        "#sync-camera-video"
+        "#sync-camera-video",
       ) as HTMLVideoElement;
       this.canvasElement = this.querySelector(
-        "#sync-scan-canvas"
+        "#sync-scan-canvas",
       ) as HTMLCanvasElement;
 
       if (this.videoElement) {
@@ -218,7 +222,7 @@ export class WorkspaceSettings extends LitElement {
       0,
       0,
       this.canvasElement.width,
-      this.canvasElement.height
+      this.canvasElement.height,
     );
     const code = jsQR(imageData.data, imageData.width, imageData.height);
 
@@ -231,7 +235,7 @@ export class WorkspaceSettings extends LitElement {
       this.stopScanningForSync();
     } else {
       this.scanningAnimation = requestAnimationFrame(() =>
-        this.scanForSyncQR()
+        this.scanForSyncQR(),
       );
     }
   }
@@ -326,6 +330,32 @@ export class WorkspaceSettings extends LitElement {
     } catch (error) {
       console.error("Failed to remove sync key:", error);
       this.error = "Failed to remove sync key";
+    }
+  }
+
+  // Add an existing sync key
+  private async addExistingSyncKey() {
+    const key = this.newSyncKeyInput.trim();
+    if (!key) {
+      this.error = "Please enter a sync key";
+      return;
+    }
+
+    if (this.syncKeys.includes(key)) {
+      this.error = "This sync key is already added";
+      return;
+    }
+
+    try {
+      await addWorkspaceSyncKey(this.workspaceKey, key);
+      this.newSyncKeyInput = "";
+      await this.loadWorkspaceData();
+      this.updateStatus();
+      this.requestUpdate();
+      this.error = null;
+    } catch (error) {
+      console.error("Failed to add sync key:", error);
+      this.error = "Failed to add sync key";
     }
   }
 
@@ -436,7 +466,7 @@ export class WorkspaceSettings extends LitElement {
         detail: { screen: "workspace-browser" },
         bubbles: true,
         composed: true,
-      })
+      }),
     );
   }
 
@@ -506,8 +536,8 @@ export class WorkspaceSettings extends LitElement {
       this.status === "connected"
         ? "Connected"
         : this.status === "connecting"
-        ? "Connecting"
-        : "Disconnected";
+          ? "Connecting"
+          : "Disconnected";
 
     return html`
       <div class="header">
@@ -586,6 +616,8 @@ export class WorkspaceSettings extends LitElement {
             <label>Sync Keys (P2PT)</label>
             <div class="info">
               Share these keys with peers to sync. Anyone with a key can join.
+              Do not sync different unrelated workspaces, start with an empty
+              workspace on each new device.
             </div>
 
             ${this.syncKeys.length > 0
@@ -609,7 +641,7 @@ export class WorkspaceSettings extends LitElement {
                             Remove
                           </button>
                         </div>
-                      `
+                      `,
                     )}
                   </div>
                 `
@@ -625,6 +657,24 @@ export class WorkspaceSettings extends LitElement {
             >
               + Create New Random Sync Key
             </button>
+
+            <div style="margin-top: 1rem; display: flex; gap: 0.5rem;">
+              <input
+                type="text"
+                .value=${this.newSyncKeyInput}
+                @input=${(e: Event) => {
+                  this.newSyncKeyInput = (e.target as HTMLInputElement).value;
+                }}
+                placeholder="Enter existing sync key"
+                style="flex: 1; font-family: monospace; font-size: 0.85rem;"
+              />
+              <button
+                @click=${() => this.addExistingSyncKey()}
+                style="white-space: nowrap;"
+              >
+                Add
+              </button>
+            </div>
           </div>
         </div>
 
@@ -676,7 +726,7 @@ export class WorkspaceSettings extends LitElement {
                       .value=${this.defaultCategory}
                       @change=${(e: Event) =>
                         this.handleDefaultCategoryChange(
-                          (e.target as HTMLSelectElement).value
+                          (e.target as HTMLSelectElement).value,
                         )}
                       style="width: 100%; padding: 0.5rem; border-radius: 4px; border: 1px solid #ddd;"
                     >
@@ -684,7 +734,7 @@ export class WorkspaceSettings extends LitElement {
                       ${this.categories.map(
                         (cat) => html`
                           <option value="${cat.id}">${cat.name}</option>
-                        `
+                        `,
                       )}
                     </select>
                   </div>
@@ -703,7 +753,7 @@ export class WorkspaceSettings extends LitElement {
                           Delete
                         </button>
                       </div>
-                    `
+                    `,
                   )}
                 </div>
               `

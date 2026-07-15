@@ -694,8 +694,11 @@ export async function enableWebRTC(
 /**
  * Add a new sync key and reconnect
  */
-export async function addWorkspaceSyncKey(workspaceKey: string): Promise<string> {
-  const syncKey = generateSyncKey();
+export async function addWorkspaceSyncKey(
+  workspaceKey: string,
+  existingKey?: string
+): Promise<string> {
+  const syncKey = existingKey || generateSyncKey();
   addSyncKey(workspaceKey, syncKey);
 
   // Reconnect with new key
