@@ -1,11 +1,14 @@
 import * as Y from "yjs";
 import { IndexeddbPersistence } from "y-indexeddb";
-import Peer, { type DataConnection } from "peerjs";
 import { generateItemId } from "./uuid.js";
 import {
   setWorkspaceLocalSettingKey,
   getWorkspaceLocalSettings,
+  getSyncKeys,
+  addSyncKey,
+  removeSyncKey,
 } from "./local-settings.js";
+import { P2PTSyncProvider, generateSyncKey, DEFAULT_TRACKERS } from "./p2pt-sync.js";
 import convert from "convert";
 
 interface WorkspaceMetadata {
@@ -52,16 +55,6 @@ function saveWorkspaceRegistry(): void {
   } catch (error) {
     console.error("Failed to save workspace registry:", error);
   }
-}
-
-async function sha256(message: string) {
-  const encoder = new TextEncoder();
-  const data = encoder.encode(message);
-  const buf = await window.crypto.subtle.digest("sha-256", data);
-
-  return Array.from(new Uint8Array(buf))
-    .map((byte) => byte.toString(16).padStart(2, "0"))
-    .join("");
 }
 
 // Initialize by loading workspace registry
@@ -633,295 +626,133 @@ export async function compareContentsToLoadout(
   }
 }
 
-const webrtcRetryTimers = new Map<string, number>();
+// P2PT provider instances per workspace
+const p2ptProviders = new Map<string, P2PTSyncProvider>();
 
+// Retry timers for P2PT
+const p2ptRetryTimers = new Map<string, number>();
+const p2ptRetryStateByWorkspace = new Map<string, { lastRetryCount: number }>();
+
+/**
+ * Enable P2PT sync for a workspace
+ */
 export async function enableWebRTC(
   workspaceKey: string,
-  signalingServers: string[] = []
+  signalingServers: string[] = DEFAULT_TRACKERS
 ) {
   const doc = await getWorkspaceDoc(workspaceKey);
 
   // Disconnect any existing provider
-  if (peerInstances.has(workspaceKey)) {
+  if (p2ptProviders.has(workspaceKey)) {
     disconnectWebRTC(workspaceKey);
   }
 
   try {
-    // Use room key from local settings, not from synced workspace
-    const localPeerId =
-      getWorkspaceLocalSettings(workspaceKey).localPeerId || "";
+    // Get sync keys from local settings
+    const syncKeys = getSyncKeys(workspaceKey);
 
-    const remotePeerId =
-      getWorkspaceLocalSettings(workspaceKey).syncPeerId || "";
-
-    if (!localPeerId || localPeerId.trim() === "") {
+    if (syncKeys.length === 0) {
       console.log(
-        `Skipping sync for workspace ${workspaceKey}: Local peer ID is empty`
+        `Skipping sync for workspace ${workspaceKey}: No sync keys configured`
       );
       return null as any;
     }
 
-    const hashedPeerId = await sha256(localPeerId);
-    // Create PeerJS instance
-    const peer = new Peer(hashedPeerId, {
-      config: {
-        iceServers: [
-          { urls: "stun:stun.l.google.com:19302" },
-          { urls: "stun:stun1.l.google.com:19302" },
-        ],
-      },
-    });
+    // Create P2PT provider
+    const provider = new P2PTSyncProvider(doc, syncKeys, signalingServers);
 
-    // Store peer instance
-    peerInstances.set(workspaceKey, peer);
+    // Set up status change handler
+    provider.onStatusChange = (status) => {
+      // Store status for getWebRTCStatus
+      console.log(
+        `[P2PT] Status change for ${workspaceKey}:`,
+        status
+      );
+    };
 
-    // On open: connect to room rendezvous point
-    peer.on("open", (myPeerId) => {
-      if (!remotePeerId || remotePeerId.trim() === "") {
-        return;
-      }
-      connectToPeer(workspaceKey, remotePeerId, myPeerId, peer);
-    });
+    // Start the provider
+    await provider.start();
 
-    // On incoming connection: accept and set up sync
-    peer.on("connection", (conn) => {
-      setupConnection(workspaceKey, conn);
-    });
+    // Store provider instance
+    p2ptProviders.set(workspaceKey, provider);
 
-    // Error handling with existing retry logic
-    peer.on("error", (err) => {
-      const errorMsg = err instanceof Error ? err.message : String(err);
-      console.error("PeerJS error:", err);
-      scheduleWebRTCRetry(workspaceKey);
-    });
-
-    clearWebRTCRetryTimers(workspaceKey);
+    clearP2PTRetryTimers(workspaceKey);
     console.log(
-      `Sync enabled for workspace ${workspaceKey} (room: ${localPeerId})`
+      `P2PT Sync enabled for workspace ${workspaceKey} with keys: ${syncKeys.join(", ")}`
     );
-    return peer;
+    return provider;
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error);
-    console.error("Failed to enable sync:", error);
+    console.error("Failed to enable P2PT sync:", error);
 
     // Schedule retry with exponential backoff
-    scheduleWebRTCRetry(workspaceKey);
+    scheduleP2PTRetry(workspaceKey);
     throw error;
   }
 }
 
-async function connectToPeer(
-  workspaceKey: string,
-  remotePeerId: string,
-  myPeerId: string,
-  peer: Peer
-) {
-  const hashedPeerId = await sha256(remotePeerId);
-  // Connect to room rendezvous peer
-  const roomConn = peer.connect(hashedPeerId, {
-    reliable: true,
-  });
+/**
+ * Add a new sync key and reconnect
+ */
+export async function addWorkspaceSyncKey(workspaceKey: string): Promise<string> {
+  const syncKey = generateSyncKey();
+  addSyncKey(workspaceKey, syncKey);
 
-  // Set up sync
-  setupConnection(workspaceKey, roomConn);
+  // Reconnect with new key
+  try {
+    disconnectWebRTC(workspaceKey);
+    await enableWebRTC(workspaceKey);
+  } catch (error) {
+    console.error("Failed to reconnect after adding sync key:", error);
+  }
+
+  return syncKey;
 }
 
-function setupConnection(workspaceKey: string, conn: DataConnection) {
-  // Get workspace doc asynchronously
-  getWorkspaceDoc(workspaceKey)
-    .then((doc) => {
-      // Track this peer as connected
-      if (!connectedPeers.has(workspaceKey)) {
-        connectedPeers.set(workspaceKey, new Set());
-      }
-      connectedPeers.get(workspaceKey)!.add(conn.peer);
+/**
+ * Remove a sync key and reconnect
+ */
+export async function removeWorkspaceSyncKey(
+  workspaceKey: string,
+  syncKey: string
+): Promise<void> {
+  removeSyncKey(workspaceKey, syncKey);
 
-      let synced = false;
-
-      // Listen for document updates and sync to this peer
-      const updateHandler = (update: Uint8Array) => {
-        try {
-          if (conn.open) {
-            console.log(
-              `[${workspaceKey}] Sending update to peer ${conn.peer}, size: ${update.length}`
-            );
-            conn.send({
-              type: "sync",
-              data: update,
-            });
-          }
-        } catch (error) {
-          console.error("Failed to send sync message:", error);
-        }
-      };
-
-      // Handle incoming messages
-      conn.on("data", (msg: any) => {
-        console.log(
-          `[${workspaceKey}] Received message type: ${msg.type} from peer ${conn.peer}, data type: ${msg.data?.constructor?.name}`
-        );
-
-        if (msg.type === "syncReady") {
-          try {
-            if (doc) {
-              console.log(
-                `[${workspaceKey}] Peer is ready, sending our full state`
-              );
-              const stateVector = Y.encodeStateVector(doc);
-              console.log(
-                `[${workspaceKey}] Sending state vector to peer ${conn.peer}, size: ${stateVector.length}`
-              );
-              conn.send({
-                type: "stateVector",
-                data: stateVector,
-              });
-            }
-          } catch (error) {
-            console.error("Failed to send state on syncReady:", error);
-          }
-        }
-
-        if (msg.type === "sync" && msg.data) {
-          try {
-            if (doc) {
-              const data =
-                msg.data instanceof Uint8Array
-                  ? msg.data
-                  : new Uint8Array(msg.data);
-              console.log(
-                `[${workspaceKey}] Applying sync update from peer, size: ${data.length}`
-              );
-              Y.logUpdate(data);
-              Y.applyUpdate(doc, data, conn.peer);
-              console.log(`[${workspaceKey}] Sync update applied successfully`);
-            }
-          } catch (error) {
-            console.error("Failed to apply sync update:", error);
-          }
-        }
-
-        if (msg.type === "stateVector" && msg.data) {
-          try {
-            const stateVector =
-              msg.data instanceof Uint8Array
-                ? msg.data
-                : new Uint8Array(msg.data);
-            if (doc) {
-              console.log(
-                `[${workspaceKey}] Received stateVector from peer, encoding response`
-              );
-              const state = Y.encodeStateAsUpdate(doc, stateVector);
-              console.log(
-                `[${workspaceKey}] Sending state response, size: ${state.length}`
-              );
-              conn.send({
-                type: "sync",
-                data: state,
-              });
-            }
-          } catch (error) {
-            console.error("Failed to handle stateVector:", error);
-          }
-        }
-      });
-
-      // On connection, exchange initial state and subscribe to updates
-      conn.on("open", () => {
-        try {
-          if (!doc) {
-            console.error("Doc is null during connection open");
-            return;
-          }
-
-          console.log(
-            `[${workspaceKey}] Connection opened with peer ${conn.peer}, subscribing to updates`
-          );
-
-          // Subscribe to future updates
-          doc.on("update", updateHandler);
-
-          // Send a signal that we're ready to sync
-          conn.send({
-            type: "syncReady",
-          });
-
-          synced = true;
-          webrtcRetryStateByWorkspace.set(workspaceKey, { lastRetryCount: 0 });
-          console.log(
-            `[${workspaceKey}] Connection ready with peer ${conn.peer}`
-          );
-        } catch (error) {
-          console.error("Failed to sync initial state:", error);
-        }
-      });
-
-      conn.on("close", () => {
-        // Unsubscribe from updates
-        if (synced && doc) {
-          doc.off("update", updateHandler);
-        }
-
-        // Remove from connected peers
-        const peers = connectedPeers.get(workspaceKey);
-        if (peers) {
-          peers.delete(conn.peer);
-        }
-      });
-
-      if (!peerConnections.has(workspaceKey)) {
-        peerConnections.set(workspaceKey, new Map());
-      }
-      peerConnections.get(workspaceKey)!.set(conn.peer, conn);
-    })
-    .catch((error) => {
-      console.error("Failed to setup connection:", error);
-      conn.close();
-    });
+  // Reconnect without the removed key
+  try {
+    disconnectWebRTC(workspaceKey);
+    const syncKeys = getSyncKeys(workspaceKey);
+    if (syncKeys.length > 0) {
+      await enableWebRTC(workspaceKey);
+    }
+  } catch (error) {
+    console.error("Failed to reconnect after removing sync key:", error);
+  }
 }
 
 export function disconnectWebRTC(workspaceKey: string) {
-  // Close all connections
-  const connections = peerConnections.get(workspaceKey);
-  if (connections) {
-    connections.forEach((conn) => {
-      try {
-        conn.close();
-      } catch (error) {
-        console.error("Error closing connection:", error);
-      }
-    });
-    peerConnections.delete(workspaceKey);
-  }
-
-  // Destroy peer instance
-  const peer = peerInstances.get(workspaceKey);
-  if (peer) {
+  // Destroy P2PT provider
+  const provider = p2ptProviders.get(workspaceKey);
+  if (provider) {
     try {
-      peer.destroy();
+      provider.destroy();
     } catch (error) {
-      console.error("Error destroying peer:", error);
+      console.error("Error destroying P2PT provider:", error);
     }
-    peerInstances.delete(workspaceKey);
+    p2ptProviders.delete(workspaceKey);
   }
 
-  // Clear connected peers tracking
-  connectedPeers.delete(workspaceKey);
-
-  clearWebRTCRetryTimers(workspaceKey);
-  console.log(`Sync disabled for workspace ${workspaceKey}`);
+  clearP2PTRetryTimers(workspaceKey);
+  console.log(`P2PT Sync disabled for workspace ${workspaceKey}`);
 }
 
-function clearWebRTCRetryTimers(workspaceKey: string) {
-  const timer = webrtcRetryTimers.get(workspaceKey);
+function clearP2PTRetryTimers(workspaceKey: string) {
+  const timer = p2ptRetryTimers.get(workspaceKey);
   if (timer) {
     clearTimeout(timer);
-    webrtcRetryTimers.delete(workspaceKey);
+    p2ptRetryTimers.delete(workspaceKey);
   }
 }
-const webrtcRetryStateByWorkspace = new Map<
-  string,
-  { lastRetryCount: number }
->();
 
 /**
  * Calculate exponential backoff delay in milliseconds
@@ -939,34 +770,34 @@ export function getWebRTCRetryDelay(
   return cappedDelay + jitter;
 }
 
-function scheduleWebRTCRetry(workspaceKey: string) {
+function scheduleP2PTRetry(workspaceKey: string) {
   // Clear any existing retry timer
-  clearWebRTCRetryTimers(workspaceKey);
+  clearP2PTRetryTimers(workspaceKey);
 
   const retryCount =
-    webrtcRetryStateByWorkspace.get(workspaceKey)?.lastRetryCount || 0;
+    p2ptRetryStateByWorkspace.get(workspaceKey)?.lastRetryCount || 0;
   const delayMs = getWebRTCRetryDelay(retryCount);
 
   console.log(
-    `Scheduling WebRTC retry for ${workspaceKey} in ${Math.round(
+    `Scheduling P2PT retry for ${workspaceKey} in ${Math.round(
       delayMs
     )}ms (attempt ${retryCount})`
   );
 
   const timer = window.setTimeout(() => {
-    webrtcRetryTimers.delete(workspaceKey);
+    p2ptRetryTimers.delete(workspaceKey);
     console.log(
-      `Attempting WebRTC reconnect for ${workspaceKey} (attempt ${retryCount})`
+      `Attempting P2PT reconnect for ${workspaceKey} (attempt ${retryCount})`
     );
     try {
       enableWebRTC(workspaceKey);
     } catch (error) {
-      console.error("WebRTC retry failed, will try again:", error);
+      console.error("P2PT retry failed, will try again:", error);
       // Already scheduled another retry in enableWebRTC
     }
   }, delayMs);
 
-  webrtcRetryTimers.set(workspaceKey, timer);
+  p2ptRetryTimers.set(workspaceKey, timer);
 }
 
 export function getWebRTCStatus(workspaceKey: string): {
@@ -976,28 +807,29 @@ export function getWebRTCStatus(workspaceKey: string): {
   signalingServer: string;
   retryCount: number;
 } {
-  const peer = peerInstances.get(workspaceKey);
-  const connections = peerConnections.get(workspaceKey);
+  const provider = p2ptProviders.get(workspaceKey);
   const retryCount =
-    webrtcRetryStateByWorkspace.get(workspaceKey)?.lastRetryCount || 0;
+    p2ptRetryStateByWorkspace.get(workspaceKey)?.lastRetryCount || 0;
 
-  if (!peer || !peer.open) {
+  if (!provider) {
     return {
       connected: false,
       peers: 0,
       status: "disconnected",
-      signalingServer: "cloud.peerjs.com",
+      signalingServer: "WebTorrent trackers",
       retryCount,
     };
   }
 
-  const peerCount = connections ? connections.size : 0;
+  const status = provider.getStatus();
 
   return {
-    connected: peer.open,
-    peers: peerCount,
-    status: peer.open ? "connected to server" : "disconnected",
-    signalingServer: "cloud.peerjs.com",
+    connected: status.connected,
+    peers: status.peers,
+    status: status.connected
+      ? `connected (${status.syncKeys.length} sync key(s))`
+      : "disconnected",
+    signalingServer: "WebTorrent trackers",
     retryCount,
   };
 }
@@ -1006,17 +838,23 @@ export async function updateWorkspaceLocalPeerId(
   workspaceKey: string,
   newSyncKey: string
 ) {
+  // Legacy function - now adds a sync key instead
+  // Kept for backward compatibility
   await getWorkspaceDoc(workspaceKey);
 
-  // Save to local settings, not to synced workspace
-  setWorkspaceLocalSettingKey(workspaceKey, "localPeerId", newSyncKey);
+  const syncKeys = getSyncKeys(workspaceKey);
+
+  // If no sync keys exist, add this one
+  if (syncKeys.length === 0) {
+    addSyncKey(workspaceKey, newSyncKey);
+  }
 
   // Reconnect with new room
   try {
     disconnectWebRTC(workspaceKey);
     await enableWebRTC(workspaceKey);
   } catch (error) {
-    console.error("Failed to reconnect WebRTC after sync key change:", error);
+    console.error("Failed to reconnect after sync key change:", error);
   }
 }
 
@@ -1024,17 +862,23 @@ export async function updateWorkspaceSyncPeerId(
   workspaceKey: string,
   newSyncKey: string
 ) {
+  // Legacy function - now adds a sync key instead
+  // Kept for backward compatibility
   await getWorkspaceDoc(workspaceKey);
 
-  // Save to local settings, not to synced workspace
-  setWorkspaceLocalSettingKey(workspaceKey, "syncPeerId", newSyncKey);
+  const syncKeys = getSyncKeys(workspaceKey);
+
+  // If no sync keys exist, add this one
+  if (syncKeys.length === 0) {
+    addSyncKey(workspaceKey, newSyncKey);
+  }
 
   // Reconnect with new room
   try {
     disconnectWebRTC(workspaceKey);
     await enableWebRTC(workspaceKey);
   } catch (error) {
-    console.error("Failed to reconnect WebRTC after sync key change:", error);
+    console.error("Failed to reconnect after sync key change:", error);
   }
 }
 

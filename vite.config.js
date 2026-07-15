@@ -24,12 +24,29 @@ export default defineConfig({
   publicDir: '../public',
   build: {
     outDir: '../dist',
+    commonjsOptions: {
+      ignoreDynamicRequires: true,
+    },
   },
   server: {
     port: 5173,
     https: true,
   },
   optimizeDeps: {
-    include: ['peerjs'],
+    include: ['yjs', 'lib0'],
+    esbuildOptions: {
+      define: {
+        global: 'globalThis',
+      },
+    },
+  },
+  resolve: {
+    alias: {
+      events: 'events',
+      buffer: 'buffer/',
+    },
+  },
+  define: {
+    global: 'globalThis',
   },
 });

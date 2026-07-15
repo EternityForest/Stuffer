@@ -4,8 +4,11 @@
  */
 
 interface WorkspaceLocalSettings {
+  // Legacy: single sync peer ID (for backward compatibility - deprecated)
   syncPeerId?: string;
   localPeerId?: string;
+  // List of sync keys for P2PT sync
+  syncKeys?: string[];
 }
 
 const STORAGE_KEY = 'stuffer:workspace-settings';
@@ -46,4 +49,42 @@ export function setWorkspaceLocalSettings(workspaceKey: string, settings: Partia
 
 export function setWorkspaceLocalSettingKey(workspaceKey: string, key: string, value: any) {
   setWorkspaceLocalSettings(workspaceKey, { [key]: value });
+}
+
+// Sync keys management
+export function getSyncKeys(workspaceKey: string): string[] {
+  const settings = getWorkspaceLocalSettings(workspaceKey);
+  return settings.syncKeys || [];
+}
+
+export function addSyncKey(workspaceKey: string, syncKey: string): void {
+  const settings = getLocalSettings();
+  const current = settings.get(workspaceKey) || {};
+  const keys = current.syncKeys || [];
+
+  if (!keys.includes(syncKey)) {
+    keys.push(syncKey);
+    settings.set(workspaceKey, { ...current, syncKeys: keys });
+    saveLocalSettings(settings);
+  }
+}
+
+export function removeSyncKey(workspaceKey: string, syncKey: string): void {
+  const settings = getLocalSettings();
+  const current = settings.get(workspaceKey) || {};
+  const keys = current.syncKeys || [];
+
+  const index = keys.indexOf(syncKey);
+  if (index > -1) {
+    keys.splice(index, 1);
+    settings.set(workspaceKey, { ...current, syncKeys: keys });
+    saveLocalSettings(settings);
+  }
+}
+
+export function clearSyncKeys(workspaceKey: string): void {
+  const settings = getLocalSettings();
+  const current = settings.get(workspaceKey) || {};
+  settings.set(workspaceKey, { ...current, syncKeys: [] });
+  saveLocalSettings(settings);
 }

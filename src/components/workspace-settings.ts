@@ -3,10 +3,8 @@ import { customElement, property, state } from "lit/decorators.js";
 import {
   getWorkspaceSyncedMetadata,
   getWebRTCStatus,
-  updateWorkspaceSyncPeerId,
   enableWebRTC,
   disconnectWebRTC,
-  updateWorkspaceLocalPeerId,
   exportWorkspaceState,
   importWorkspaceState,
   downloadWorkspaceFile,
@@ -15,10 +13,13 @@ import {
   getCategories,
   getDefaultCategory,
   setDefaultCategory,
+  addWorkspaceSyncKey,
+  removeWorkspaceSyncKey,
 } from "../services/storage.js";
-import { getWorkspaceLocalSettings } from "../services/local-settings.js";
-import { generateUUID } from "../utils/uuid.js";
-import QRCode from "qrcode";
+import {
+  getWorkspaceLocalSettings,
+  getSyncKeys,
+} from "../services/local-settings.js";
 import jsQR from "jsqr";
 
 @customElement("workspace-settings")
@@ -37,7 +38,7 @@ export class WorkspaceSettings extends LitElement {
   declare syncToPeer: string;
 
   @state()
-  declare localPeerId: string;
+  declare syncKeys: string[];
 
   @state()
   declare editingsyncToPeer: boolean;
@@ -76,9 +77,6 @@ export class WorkspaceSettings extends LitElement {
   declare defaultCategory: string;
 
   @state()
-  declare qrCodeDataUrl: string | null;
-
-  @state()
   declare showScanSync: boolean;
 
   @state()
@@ -96,20 +94,19 @@ export class WorkspaceSettings extends LitElement {
     this.workspaceKey = "";
     this.workspaceName = "";
     this.syncToPeer = "";
-    this.localPeerId = "";
+    this.syncKeys = [];
     this.editingsyncToPeer = false;
     this.newsyncToPeer = "";
     this.connected = false;
     this.peerCount = 0;
     this.status = "disconnected";
-    this.signalingServer = "wss://y-webrtc-ckynwnzncc.now.sh";
+    this.signalingServer = "WebTorrent trackers";
     this.error = null;
     this.importSuccess = null;
     this.categories = [];
     this.newCategoryName = "";
     this.showCategoryForm = false;
     this.defaultCategory = "all";
-    this.qrCodeDataUrl = null;
     this.showScanSync = false;
     this.isScanningForSync = false;
   }
@@ -119,7 +116,6 @@ export class WorkspaceSettings extends LitElement {
     await this.loadWorkspaceData();
     await this.loadCategories();
     await this.loadDefaultCategory();
-    await this.generateQRCode();
     this.startStatusPolling();
 
     // Listen for scanned sync peer ID
@@ -138,20 +134,6 @@ export class WorkspaceSettings extends LitElement {
       globalThis.removeEventListener("globalTagScan", this.boundScanSyncEvent);
     }
     this.stopScanningForSync();
-  }
-
-  private async generateQRCode() {
-    if (!this.localPeerId) return;
-
-    try {
-      this.qrCodeDataUrl = await QRCode.toDataURL(this.localPeerId, {
-        width: 200,
-        errorCorrectionLevel: "H",
-        type: "image/png",
-      });
-    } catch (error) {
-      console.error("Failed to generate QR code:", error);
-    }
   }
 
   private handleScanSyncEvent(event: Event) {
@@ -261,13 +243,12 @@ export class WorkspaceSettings extends LitElement {
       const workspace = await getWorkspaceSyncedMetadata(this.workspaceKey);
       if (workspace) {
         this.workspaceName = (workspace as any).get("name") as string;
-        // Get sync key from local settings, not from synced workspace
+        // Get sync keys from local settings
+        this.syncKeys = getSyncKeys(this.workspaceKey);
+        // Legacy: also get old syncPeerId for backward compatibility
         this.syncToPeer =
           getWorkspaceLocalSettings(this.workspaceKey).syncPeerId || "";
-        this.localPeerId =
-          getWorkspaceLocalSettings(this.workspaceKey).localPeerId || "";
         this.newsyncToPeer = this.syncToPeer;
-        await this.generateQRCode();
       }
     } catch (error) {
       console.error("Failed to load workspace data:", error);
@@ -318,29 +299,33 @@ export class WorkspaceSettings extends LitElement {
     }
   }
 
-  private async startRegenLocalKey() {
-    if (confirm("Are you sure you want to regenerate the local sync key?")) {
-      try {
-        const uuid = generateUUID();
-        await updateWorkspaceLocalPeerId(this.workspaceKey, uuid);
-        await this.loadWorkspaceData();
-        await this.generateQRCode();
-      } catch (error) {
-        console.error("Failed to regenerate local sync key:", error);
-        this.error = "Failed to regenerate local sync key";
-      }
+  // Create a new random sync key
+  private async createNewSyncKey() {
+    try {
+      await addWorkspaceSyncKey(this.workspaceKey);
+      await this.loadWorkspaceData();
+      this.updateStatus();
+      this.requestUpdate();
+    } catch (error) {
+      console.error("Failed to create new sync key:", error);
+      this.error = "Failed to create new sync key";
     }
   }
 
-  private async startClearLocalKey() {
-    if (confirm("Are you sure you want to clear the local sync key?")) {
-      try {
-        await updateWorkspaceLocalPeerId(this.workspaceKey, "");
-        await this.loadWorkspaceData();
-      } catch (error) {
-        console.error("Failed to clear local sync key:", error);
-        this.error = "Failed to clear local sync key";
-      }
+  // Remove a sync key
+  private async removeSyncKey(syncKey: string) {
+    if (!confirm("Are you sure you want to remove this sync key?")) {
+      return;
+    }
+
+    try {
+      await removeWorkspaceSyncKey(this.workspaceKey, syncKey);
+      await this.loadWorkspaceData();
+      this.updateStatus();
+      this.requestUpdate();
+    } catch (error) {
+      console.error("Failed to remove sync key:", error);
+      this.error = "Failed to remove sync key";
     }
   }
 
@@ -386,8 +371,8 @@ export class WorkspaceSettings extends LitElement {
   private async reconnect() {
     if (!this.workspaceKey) return;
 
-    if (!this.localPeerId || this.localPeerId.trim() === "") {
-      this.error = "Cannot reconnect: Local peer ID is empty";
+    if (this.syncKeys.length === 0) {
+      this.error = "Cannot reconnect: No sync keys configured";
       return;
     }
 
@@ -395,7 +380,7 @@ export class WorkspaceSettings extends LitElement {
       await enableWebRTC(this.workspaceKey);
       setTimeout(() => this.updateStatus(), 500);
     } catch (error) {
-      console.error("Failed to reconnect WebRTC:", error);
+      console.error("Failed to reconnect:", error);
       this.error = "Failed to reconnect";
     }
   }
@@ -550,32 +535,6 @@ export class WorkspaceSettings extends LitElement {
           <h3>Sync Configuration</h3>
 
           <div class="form-group">
-            <label>Local Peer ID QR Code</label>
-            ${this.localPeerId
-              ? html`
-                  <div
-                    style="display: flex; flex-direction: column; align-items: center; gap: 1rem;"
-                  >
-                    ${this.qrCodeDataUrl
-                      ? html`
-                          <img
-                            src="${this.qrCodeDataUrl}"
-                            alt="Local Peer ID QR Code"
-                            style="border: 2px solid #ddd; padding: 0.5rem; border-radius: 4px;"
-                          />
-                        `
-                      : html`<div>Generating QR code...</div>`}
-                    <div
-                      style="text-align: center; font-size: 0.85rem; color: #666;"
-                    >
-                      Scan this QR code from another device to sync
-                    </div>
-                  </div>
-                `
-              : html`<div style="color: #999;">No local peer ID set</div>`}
-          </div>
-
-          <div class="form-group">
             <label>Sync by Scanning Remote QR</label>
             ${this.isScanningForSync
               ? html`
@@ -623,81 +582,49 @@ export class WorkspaceSettings extends LitElement {
                 `}
           </div>
 
-          ${this.editingsyncToPeer
-            ? html`
-                <div class="stacked-form">
-                  <label
-                    >Sync to Peer
-                    <input
-                      type="text"
-                      .value=${this.newsyncToPeer}
-                      @input=${(e: Event) => {
-                        this.newsyncToPeer = (
-                          e.target as HTMLInputElement
-                        ).value;
-                      }}
-                      placeholder="Enter new sync key"
-                  /></label>
-                  <div class="info">
-                    Changing the sync key will disconnect from current peers and
-                    connect to a new room.
-                  </div>
-                  <div class="tool-bar">
-                    <button @click=${() => this.updateSyncRemoteKey()}>
-                      Save Key
-                    </button>
-                    <button
-                      class="danger"
-                      @click=${() => this.cancelEditsyncToPeer()}
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                </div>
-              `
-            : html`
-                <div class="form-group">
-                  <label
-                    >Sync To Peer
-                    <input
-                      type="text"
-                      class="readonly"
-                      .value=${this.syncToPeer}
-                      readonly
-                  /></label>
-                  <button
-                    @click=${() => this.startEditsyncToPeer()}
-                    style="margin-top: 0.5rem; width: 100%;"
-                  >
-                    Edit Sync Key
-                  </button>
-                </div>
-              `}
-
           <div class="form-group">
-            <label
-              >Local Peer ID
-              <input
-                type="text"
-                class="readonly"
-                .value=${this.localPeerId}
-                readonly
-            /></label>
-
-            <div class="tool-bar">
-              <button
-                @click=${() => this.startRegenLocalKey()}
-                style="margin-top: 0.5rem; width: 100%;"
-              >
-                Regenerate Local Peer ID
-              </button>
-              <button
-                @click=${() => this.startClearLocalKey()}
-                style="margin-top: 0.5rem; width: 100%;"
-              >
-                Clear local ID/Disable Sync
-              </button>
+            <label>Sync Keys (P2PT)</label>
+            <div class="info">
+              Share these keys with peers to sync. Anyone with a key can join.
             </div>
+
+            ${this.syncKeys.length > 0
+              ? html`
+                  <div class="sync-keys-list">
+                    ${this.syncKeys.map(
+                      (key) => html`
+                        <div class="sync-key-item">
+                          <input
+                            type="text"
+                            class="readonly"
+                            .value=${key}
+                            readonly
+                            style="font-family: monospace; font-size: 0.85rem;"
+                          />
+                          <button
+                            class="danger"
+                            @click=${() => this.removeSyncKey(key)}
+                            title="Remove sync key"
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      `
+                    )}
+                  </div>
+                `
+              : html`
+                  <div class="info" style="padding: 0.5rem;">
+                    No sync keys configured. Create one to start syncing.
+                  </div>
+                `}
+
+            <button
+              @click=${() => this.createNewSyncKey()}
+              style="margin-top: 0.5rem; width: 100%;"
+            >
+              + Create New Random Sync Key
+            </button>
           </div>
         </div>
 
