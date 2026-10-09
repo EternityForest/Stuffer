@@ -5,10 +5,12 @@ import {
   getItem,
   deleteItem,
   updateLastScanned,
+  getID12Disambiguator,
   ItemData,
 } from "../services/storage.js";
 import jsQR from "jsqr";
 import { scanFrameForCode } from "../services/ocr-scanner.js";
+import { formatID12LabelStart } from "../utils/id12.js";
 
 @customElement("add-remove-item")
 export class AddRemoveItem extends LitElement {
@@ -39,6 +41,9 @@ export class AddRemoveItem extends LitElement {
   private prevSearchQuery = "";
 
   @state()
+  declare id12Disambiguator: string;
+
+  @state()
   declare toastMessage: string;
 
   @state()
@@ -61,6 +66,7 @@ export class AddRemoveItem extends LitElement {
     this.toastMessage = "";
     this.toastType = "success";
         this.searchQuery = "";
+    this.id12Disambiguator = "";
 
   }
 
@@ -74,6 +80,16 @@ export class AddRemoveItem extends LitElement {
     super.connectedCallback();
     this.boundGlobalTagScan = this.globalTagScan.bind(this) as typeof this.boundGlobalTagScan
     globalThis.addEventListener("globalTagScan", this.boundGlobalTagScan );
+    this.loadID12Disambiguator();
+  }
+
+  private async loadID12Disambiguator() {
+    if (!this.workspaceKey) return;
+    try {
+      this.id12Disambiguator = await getID12Disambiguator(this.workspaceKey);
+    } catch (error) {
+      console.error("Failed to load ID12 Disambiguator:", error);
+    }
   }
 
   globalTagScan(event: CustomEvent<{ qrData: string }>) {
@@ -141,6 +157,17 @@ export class AddRemoveItem extends LitElement {
                       this.qrData = (e.target as HTMLInputElement).value;
                     }}
                 /></label>
+
+                ${this.id12Disambiguator
+                  ? html`
+                      <p style="color: #666; font-size: 0.85rem; margin: 0;">
+                        Suggested random ID12 code start for label makers:
+                        <span style="font-family: monospace;"
+                          >${formatID12LabelStart(this.id12Disambiguator)}</span
+                        >
+                      </p>
+                    `
+                  : ""}
 
                 <div class="tool-bar">
                   <button @click=${() => this.addScannedItem()}>
