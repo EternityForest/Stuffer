@@ -8,6 +8,7 @@ import {
 } from "../services/storage.js";
 import type { TagAlias } from "../services/storage.js";
 import jsQR from "jsqr";
+import { scanFrameForCode } from "../services/ocr-scanner.js";
 
 @customElement("alias-editor")
 export class AliasEditor extends LitElement {
@@ -185,6 +186,11 @@ export class AliasEditor extends LitElement {
         canvas.width = this.videoElement.videoWidth;
         canvas.height = this.videoElement.videoHeight;
         ctx.drawImage(this.videoElement, 0, 0);
+
+        // Parallel OCR: printed labels can be bound as aliases just like QR.
+        scanFrameForCode(this.videoElement, (scanned) => {
+          if (this.isScanning) this.handleQRCodeDetected(scanned);
+        });
 
         const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
         const code = jsQR(imageData.data, canvas.width, canvas.height);

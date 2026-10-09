@@ -7,6 +7,7 @@ import {
   updateLastScanned,
 } from "../services/storage.js";
 import jsQR from "jsqr";
+import { scanFrameForCode } from "../services/ocr-scanner.js";
 import "./nfc-toggle-button.js";
 
 @customElement("qr-scanner")
@@ -250,6 +251,12 @@ export class QrScanner extends LitElement {
     this.canvasElement.height = this.videoElement.videoHeight;
 
     ctx.drawImage(this.videoElement, 0, 0);
+
+    // OCR runs in parallel in a worker and feeds the same scan handler, so
+    // printed labels behave exactly like QR codes.
+    scanFrameForCode(this.videoElement, (scanned) => {
+      if (this.isScanning) this.handleQRScan(scanned);
+    });
 
     const imageData = ctx.getImageData(
       0,

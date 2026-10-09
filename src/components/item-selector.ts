@@ -11,6 +11,7 @@ import {
   updateLastScanned,
 } from "../services/storage.js";
 import jsQR from "jsqr";
+import { scanFrameForCode } from "../services/ocr-scanner.js";
 
 export type ItemSelectorCallback = (itemId: string, itemName: string) => void;
 
@@ -353,6 +354,11 @@ export class ItemSelector extends LitElement {
         canvas.width = this.videoElement.videoWidth;
         canvas.height = this.videoElement.videoHeight;
         ctx.drawImage(this.videoElement, 0, 0);
+
+        // Parallel OCR: recognized printed labels route through the QR handler.
+        scanFrameForCode(this.videoElement, (scanned) => {
+          if (this.isScanning) this.handleQRScan(scanned);
+        });
 
         const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
         const code = jsQR(imageData.data, canvas.width, canvas.height);
