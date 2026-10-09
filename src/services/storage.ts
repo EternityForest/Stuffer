@@ -7,6 +7,8 @@ import {
   getSyncKeys,
   addSyncKey,
   removeSyncKey,
+  getWorkspaceVersion,
+  setWorkspaceVersion,
 } from "./local-settings.js";
 import { P2PTSyncProvider, generateSyncKey, DEFAULT_TRACKERS } from "./p2pt-sync.js";
 import convert from "convert";
@@ -84,16 +86,7 @@ export async function getWorkspaceDoc(workspaceKey: string): Promise<Y.Doc> {
   );
 
   // Wait for sync
-  await new Promise<void>((resolve) => {
-    const checkSynced = () => {
-      if (persistence.synced) {
-        resolve();
-      } else {
-        setTimeout(checkSynced, 50);
-      }
-    };
-    checkSynced();
-  });
+  await waitForSync(persistence);
 
   // Give IndexedDB a moment to fully populate the doc
   await new Promise((resolve) => setTimeout(resolve, 100));
@@ -626,12 +619,207 @@ export async function compareContentsToLoadout(
   }
 }
 
+// ----------------------------------------------------------------------------
+// Migration helpers
+// ----------------------------------------------------------------------------
+
+/**
+ * Recursively re-create Y types from a JSON snapshot of a Y.Doc. We only
+ * need to special-case Y.Array fields (currently just `amountUpdates` on
+ * items); everything else is a Y.Map whose JSON representation is a plain
+ * object whose values we can reconstruct nested.
+ */
+function reconstructNested(value: any, parentKey?: string): any {
+  if (value === null || value === undefined) return value;
+  if (typeof value !== "object") return value;
+
+  // amountUpdates is a Y.Array<Y.Map<...>>
+  if (parentKey === "amountUpdates" && Array.isArray(value)) {
+    const arr = new Y.Array<any>();
+    for (const entry of value) {
+      if (entry && typeof entry === "object" && !Array.isArray(entry)) {
+        const m = new Y.Map();
+        for (const [k, v] of Object.entries(entry)) {
+          m.set(k, reconstructNested(v, k));
+        }
+        arr.push([m]);
+      } else {
+        arr.push([entry]);
+      }
+    }
+    return arr;
+  }
+
+  // Plain JSON arrays stay as plain arrays (we have no other Y.Array fields)
+  if (Array.isArray(value)) return value;
+
+  // Default: plain object -> Y.Map, recursively reconstructing values
+  const map = new Y.Map<any>();
+  for (const [k, v] of Object.entries(value)) {
+    map.set(k, reconstructNested(v, k));
+  }
+  return map;
+}
+
+/**
+ * Dump the live workspace doc to JSON and re-import it into a fresh Y.Doc.
+ * This drops the accumulated CR tombstones and compaction debt that yjs
+ * carries for the life of a doc, giving us a meaningfully smaller document.
+ */
+function buildMigratedDoc(oldDoc: Y.Doc): Y.Doc {
+  const json = oldDoc.toJSON();
+  const newDoc = new Y.Doc();
+  for (const [topKey, topVal] of Object.entries(json)) {
+    if (!topVal || typeof topVal !== "object" || Array.isArray(topVal)) {
+      continue;
+    }
+    const yMap = newDoc.getMap(topKey);
+    for (const [k, v] of Object.entries(topVal)) {
+      yMap.set(k, reconstructNested(v, k));
+    }
+  }
+  return newDoc;
+}
+
+/**
+ * Replace the workspace's Y.Doc with a fresh one, persisting it to IndexedDB
+ * and bumping the stored version. Used both by inbound migrations (provider
+ * builds newDoc from the remote's full state) and locally-initiated migrations
+ * (caller builds newDoc from JSON dump).
+ *
+ * The old Y.Doc is NOT destroyed here so callers can still read from it
+ * (e.g. to run an onMigration callback). It is removed from the workspaceDocs
+ * map and will be garbage collected once the caller releases its reference.
+ */
+export async function replaceWorkspaceDoc(
+  workspaceKey: string,
+  newDoc: Y.Doc,
+  newVersion: bigint,
+): Promise<void> {
+  // Tear down old persistence so it stops writing to IndexedDB.
+  const oldPersistence = workspacePersistence.get(workspaceKey);
+  if (oldPersistence) {
+    try {
+      await oldPersistence.destroy();
+    } catch (e) {
+      console.error("Failed to destroy old persistence:", e);
+    }
+    workspacePersistence.delete(workspaceKey);
+  }
+
+  // Drop the registry entry for the old doc. The Y.Doc itself stays alive
+  // until the caller releases its reference.
+  workspaceDocs.delete(workspaceKey);
+
+  // Wipe the old IndexedDB so the new persistence starts from a clean slate.
+  await new Promise<void>((resolve) => {
+    const req = indexedDB.deleteDatabase(`stuffer-workspace-${workspaceKey}`);
+    req.onsuccess = () => resolve();
+    req.onerror = () => {
+      console.warn(
+        `Failed to delete old IndexedDB for ${workspaceKey}:`,
+        req.error,
+      );
+      resolve();
+    };
+    req.onblocked = () => {
+      console.warn(
+        `IndexedDB delete blocked for ${workspaceKey}; proceeding anyway`,
+      );
+      resolve();
+    };
+  });
+
+  // Attach the new doc to IndexedDB and wait for it to flush.
+  const persistence = new IndexeddbPersistence(
+    `stuffer-workspace-${workspaceKey}`,
+    newDoc,
+  );
+  await waitForSync(persistence);
+  // Small grace period so y-indexeddb finishes applying its initial write.
+  await new Promise((resolve) => setTimeout(resolve, 100));
+
+  workspaceDocs.set(workspaceKey, newDoc);
+  workspacePersistence.set(workspaceKey, persistence);
+
+  setWorkspaceVersion(workspaceKey, newVersion);
+}
+
+/**
+ * Locally-initiated migration: dump the workspace data to JSON, re-import it
+ * into a fresh Y.Doc, persist, bump the version, and tell the provider to
+ * restart. If no onMigration handler is registered we assume the UI is
+ * holding onto the old doc reference and reload the page so the user starts
+ * with a clean slate.
+ */
+export async function migrateWorkspace(workspaceKey: string): Promise<void> {
+  const oldDoc = await getWorkspaceDoc(workspaceKey);
+  const provider = p2ptProviders.get(workspaceKey);
+  const newVersion = BigInt(Date.now());
+  const hasHandler = !!provider?.onMigration;
+
+  // Build the fresh doc while the old one is still alive so the callback
+  // (if any) can read from it.
+  const newDoc = buildMigratedDoc(oldDoc);
+
+  if (provider?.onMigration) {
+    try {
+      await provider.onMigration(oldDoc, newDoc);
+    } catch (e) {
+      console.error("[P2PT] onMigration callback failed:", e);
+    }
+  }
+
+  // Persist the new doc, drop the old registry entry, bump version.
+  await replaceWorkspaceDoc(workspaceKey, newDoc, newVersion);
+
+  // If the application didn't register a handler, the UI almost certainly
+  // has stale references to the old doc. Reload to start clean.
+  if (!hasHandler) {
+    console.warn(
+      "[P2PT] Local migration with no onMigration handler; reloading page.",
+    );
+    try {
+      window.location.reload();
+    } catch {
+      // non-browser env
+    }
+    return;
+  }
+
+  // Disconnect peers, swap the provider's ydoc, restart p2pt with the new
+  // version so peers re-handshake against the bumped dbVersion.
+  if (provider) {
+    await provider.handleMigration(newDoc, newVersion);
+  }
+}
+
 // P2PT provider instances per workspace
 const p2ptProviders = new Map<string, P2PTSyncProvider>();
 
 // Retry timers for P2PT
 const p2ptRetryTimers = new Map<string, number>();
 const p2ptRetryStateByWorkspace = new Map<string, { lastRetryCount: number }>();
+
+/**
+ * Wait for IndexedDB persistence to fully sync.
+ */
+function waitForSync(persistence: IndexeddbPersistence): Promise<void> {
+  return new Promise<void>((resolve) => {
+    if (persistence.synced) {
+      resolve();
+      return;
+    }
+    const checkSynced = () => {
+      if (persistence.synced) {
+        resolve();
+      } else {
+        setTimeout(checkSynced, 50);
+      }
+    };
+    checkSynced();
+  });
+}
 
 /**
  * Enable P2PT sync for a workspace
@@ -661,6 +849,10 @@ export async function enableWebRTC(
     // Create P2PT provider
     const provider = new P2PTSyncProvider(doc, syncKeys, signalingServers);
 
+    // Push the local DB version into the provider so it can participate in
+    // the version-exchange handshake.
+    provider.setLocalVersion(getWorkspaceVersion(workspaceKey));
+
     // Set up status change handler
     provider.onStatusChange = (status) => {
       // Store status for getWebRTCStatus
@@ -669,6 +861,33 @@ export async function enableWebRTC(
         status
       );
     };
+
+    // Listen for inbound migration events. When the remote announces a
+    // newer version, the provider builds a blank newDoc, runs any registered
+    // onMigration callback, and emits "migration". We then persist newDoc,
+    // swap it in, and restart p2pt so the new version propagates.
+    provider.on("migration", async (payload: any) => {
+      try {
+        const { newDoc, version, _hasHandler } = payload;
+
+        console.log(`[P2PT] Persisting migrated doc at version ${version}`);
+        await replaceWorkspaceDoc(workspaceKey, newDoc, version);
+
+        // No application handler registered: UI state may reference the
+        // old doc, so we reload to start clean.
+        console.warn(
+          "[P2PT] Inbound migration with no onMigration handler; reloading page."
+        );
+        try {
+          window.location.reload();
+        } catch {
+          // ignore (non-browser env)
+        }
+        return;
+      } catch (e) {
+        console.error("[P2PT] Failed to handle migration event:", e);
+      }
+    });
 
     // Start the provider
     await provider.start();
@@ -1191,6 +1410,23 @@ export async function exportWorkspaceState(
 ): Promise<Uint8Array> {
   const doc = await getWorkspaceDoc(workspaceKey);
   return Y.encodeStateAsUpdate(doc);
+}
+
+/**
+ * Get the size of the current state vector in bytes.
+ */
+export async function getStateVectorSize(workspaceKey: string): Promise<number> {
+  const doc = await getWorkspaceDoc(workspaceKey);
+  return Y.encodeStateVector(doc).byteLength;
+}
+
+/**
+ * Get estimated database size by encoding the full state.
+ * Note: This is an approximation; actual IndexedDB storage may differ.
+ */
+export async function getEstimatedDbSize(workspaceKey: string): Promise<number> {
+  const doc = await getWorkspaceDoc(workspaceKey);
+  return Y.encodeStateAsUpdate(doc).byteLength;
 }
 
 export async function importWorkspaceState(

@@ -9,6 +9,8 @@ interface WorkspaceLocalSettings {
   localPeerId?: string;
   // List of sync keys for P2PT sync
   syncKeys?: string[];
+  // 64-bit database version (stringified BigInt, localStorage can't store BigInt)
+  dbVersion?: string;
 }
 
 const STORAGE_KEY = 'stuffer:workspace-settings';
@@ -87,4 +89,23 @@ export function clearSyncKeys(workspaceKey: string): void {
   const current = settings.get(workspaceKey) || {};
   settings.set(workspaceKey, { ...current, syncKeys: [] });
   saveLocalSettings(settings);
+}
+
+/**
+ * Database version (64-bit, stored as stringified BigInt because JSON / localStorage
+ * cannot natively represent BigInt). Lives outside the Y.Doc itself so that we can
+ * read/write it during migration without dirtying the doc.
+ */
+export function getWorkspaceVersion(workspaceKey: string): bigint {
+  const raw = getWorkspaceLocalSettings(workspaceKey).dbVersion;
+  if (!raw) return 0n;
+  try {
+    return BigInt(raw);
+  } catch {
+    return 0n;
+  }
+}
+
+export function setWorkspaceVersion(workspaceKey: string, version: bigint): void {
+  setWorkspaceLocalSettingKey(workspaceKey, "dbVersion", version.toString());
 }

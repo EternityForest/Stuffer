@@ -11,6 +11,7 @@ Protocol messages use 32-bit type codes:
 - 0x04: STATE_UPDATE - State update (full or diff)
 - 0x05: DOC_UPDATE - Document update
 - 0x06: AWARENESS_UPDATE - Awareness protocol update
+- 0x07: VERSION - 64-bit database version (little-endian)
 """
 
 import asyncio
@@ -40,6 +41,7 @@ MSG_STATE_VECTOR = 0x03
 MSG_STATE_UPDATE = 0x04
 MSG_DOC_UPDATE = 0x05
 MSG_AWARENESS_UPDATE = 0x06
+MSG_VERSION = 0x07
 
 # Default WebTorrent tracker URLs
 DEFAULT_TRACKERS = [
@@ -49,6 +51,10 @@ DEFAULT_TRACKERS = [
 
 # Validation timeout in milliseconds
 PEER_VALIDATION_TIMEOUT = 60000
+
+# Maximum drift (ms) for an incoming remote version before we treat it as
+# "future" and disconnect. 1 hour in the future is acceptable per spec.
+MAX_VERSION_DRIFT_MS = 60 * 60 * 1000
 
 # Exponential backoff settings
 INITIAL_RECONNECT_DELAY = 1.0
@@ -95,6 +101,18 @@ def create_message(type_code: int, payload: bytes) -> bytes:
     """Create a message bytes."""
     header = struct.pack("<II", type_code, len(payload))
     return header + payload
+
+
+def encode_version(version: int) -> bytes:
+    """Encode a 64-bit database version as 8 little-endian bytes."""
+    return struct.pack("<Q", version)
+
+
+def decode_version(payload: bytes) -> int:
+    """Decode 8 little-endian bytes to an integer. Returns 0 for empty/short payloads."""
+    if len(payload) < 8:
+        return 0
+    return struct.unpack("<Q", payload[:8])[0]
 
 
 def encode_state_vector(doc: Doc) -> bytes:
@@ -147,10 +165,37 @@ class PeerConnection:
     data_channel: Optional[RTCDataChannel] = None
     validation_timer: Optional[asyncio.Task] = None
     challenge: Optional[str] = None
+    # 64-bit database version announced by the remote peer. None until exchanged.
+    remote_version: Optional[int] = None
+    # True once we've both sent MSG_VERSION and the remote version matches ours.
+    version_ready: bool = False
+    # True if this peer is currently our migration source (we are pulling their
+    # full state into a fresh local doc). Used to gate outbound broadcasts and
+    # to know when the inbound migration is complete.
+    is_migration_source: bool = False
 
     def __post_init__(self):
         if self.queued_messages is None:
             self.queued_messages = []
+
+
+@dataclass
+class PendingMigration:
+    """
+    State for an in-flight inbound migration. Created when a peer announces a
+    newer version; cleared when their full state has been applied to the new
+    doc and the application migration callback has been invoked.
+    """
+    old_doc: Doc
+    new_doc: Doc
+    new_version: int
+    # Sync key of the peer we're pulling from; we drop them after the
+    # migration completes since their announced version is stale.
+    sync_key: str
+    peer_id: str
+    has_handler: bool = False
+    # Whether the full state-update from the migration source has been received.
+    state_received: bool = False
 
 
 @dataclass
@@ -458,6 +503,7 @@ class P2PTSyncProvider:
         sync_keys: List[str],
         tracker_urls: Optional[List[str]] = None,
         on_status_change: Optional[Callable[[dict], None]] = None,
+        on_migration: Optional[Callable[[Doc, Doc], Awaitable[None] | None]] = None,
     ):
         """
         Initialize the P2PT sync provider.
@@ -467,10 +513,20 @@ class P2PTSyncProvider:
             sync_keys: Array of sync keys (shared secrets) to participate in.
             tracker_urls: Optional array of WebTorrent tracker URLs.
             on_status_change: Optional callback for status changes.
+            on_migration: Optional application migration callback. Receives
+                (oldDoc, newDoc) AFTER the new doc has been populated from the
+                remote peer. If not provided, the caller is responsible for
+                reloading once the "migration" event fires.
         """
         self.ydoc = ydoc
         self.tracker_urls = tracker_urls or DEFAULT_TRACKERS
         self.on_status_change = on_status_change
+        self.on_migration = on_migration
+
+        # List of observers for "migration" events. Mirrors the lib0 Observable
+        # pattern used by the TS implementation; storage layers register here
+        # to persist + restart p2pt after an inbound migration completes.
+        self._migration_observers: List[Callable[[dict], Awaitable[None] | None]] = []
 
         # Create TrackerManager
         self._tracker = TrackerManager(
@@ -483,6 +539,14 @@ class P2PTSyncProvider:
         self._doc_observer: Optional[Callable] = None
         self._awareness_state: Dict[str, Any] = {}
 
+        # 64-bit database version. None means "uninitialized"; peers will
+        # treat this as 0.
+        self.local_version: Optional[int] = None
+
+        # Active inbound migration, if any. While set, state/doc updates from
+        # the migration source are applied to new_doc instead of ydoc.
+        self.pending_migration: Optional[PendingMigration] = None
+
         # Subscribe to doc updates
         if hasattr(ydoc, 'observe'):
             self._doc_observer = self._handle_doc_change
@@ -491,6 +555,25 @@ class P2PTSyncProvider:
         # Create sync key data for each key
         for sync_key in sync_keys:
             self._create_sync_key_data(sync_key)
+
+    def on_migration_event(
+        self, observer: Callable[[dict], Awaitable[None] | None]
+    ) -> None:
+        """
+        Register an observer for "migration" events. Mirrors
+        `provider.on("migration", ...)` in the TS implementation.
+        """
+        self._migration_observers.append(observer)
+
+    def _emit_migration(self, payload: dict) -> None:
+        """Fire all registered migration observers."""
+        for obs in self._migration_observers:
+            try:
+                result = obs(payload)
+                if asyncio.iscoroutine(result):
+                    asyncio.create_task(result)
+            except Exception as e:
+                print(f"[P2PT] Migration observer failed: {e}")
 
     def _on_tracker_status(self, status: dict) -> None:
         """Handle tracker status changes."""
@@ -719,8 +802,13 @@ class P2PTSyncProvider:
 
         type_code, payload = parsed
 
-        # Queue message if peer not validated (unless it's a challenge response)
-        if not conn.validated and type_code not in (MSG_CHALLENGE_RESP, MSG_CHALLENGE):
+        # Queue message if peer not validated (unless it's a challenge response or
+        # a version exchange, which must flow through as soon as we validate)
+        if not conn.validated and type_code not in (
+            MSG_CHALLENGE_RESP,
+            MSG_CHALLENGE,
+            MSG_VERSION,
+        ):
             conn.queued_messages.append(message)
             return
 
@@ -743,13 +831,36 @@ class P2PTSyncProvider:
             await self._handle_challenge(sync_key, peer_id, payload)
         elif type_code == MSG_CHALLENGE_RESP:
             await self._handle_challenge_response(sync_key, peer_id, payload)
+        elif type_code == MSG_VERSION:
+            await self._handle_version_message(sync_key, peer_id, payload)
         elif type_code == MSG_STATE_VECTOR:
+            # Only accept state vectors once versions match exactly.
+            if not conn.version_ready:
+                print(
+                    f"[P2PT] Ignoring state vector from {peer_id[:8]}..."
+                    " - version not yet matched"
+                )
+                return
             await self._handle_state_vector(sync_key, peer_id, payload)
         elif type_code == MSG_STATE_UPDATE:
+            if not conn.version_ready:
+                print(
+                    f"[P2PT] Ignoring state update from {peer_id[:8]}..."
+                    " - version not yet matched"
+                )
+                return
             await self._handle_state_update(sync_key, peer_id, payload)
         elif type_code == MSG_DOC_UPDATE:
+            if not conn.version_ready:
+                print(
+                    f"[P2PT] Ignoring doc update from {peer_id[:8]}..."
+                    " - version not yet matched"
+                )
+                return
             self._handle_doc_update(sync_key, peer_id, payload)
         elif type_code == MSG_AWARENESS_UPDATE:
+            if not conn.version_ready:
+                return
             self._handle_awareness_update(sync_key, peer_id, payload)
         else:
             print(f"[P2PT] Unknown message type: {type_code}")
@@ -842,8 +953,9 @@ class P2PTSyncProvider:
                     await self._process_message(sync_key, peer_id, *parsed)
             conn.queued_messages.clear()
 
-            # Send our state vector
-            await self._send_state_vector(sync_key, peer_id)
+            # Send our database version; sync messages stay gated until the
+            # remote version matches ours.
+            await self._send_version(sync_key, peer_id)
         else:
             print(f"[P2PT] Invalid challenge response from: {peer_id[:8]}...")
             self._remove_peer(sync_key, peer_id)
@@ -862,6 +974,176 @@ class P2PTSyncProvider:
         msg = create_message(MSG_STATE_VECTOR, state_vector)
         conn.data_channel.send(base64.b64encode(msg).decode())
 
+    async def _send_version(self, sync_key: str, peer_id: str) -> None:
+        """Send our database version to the peer."""
+        data = self._sync_key_data.get(sync_key)
+        if not data:
+            return
+
+        conn = data.peers.get(peer_id)
+        if not conn or not conn.data_channel:
+            return
+
+        version = self.local_version if self.local_version is not None else 0
+        msg = create_message(MSG_VERSION, encode_version(version))
+        conn.data_channel.send(base64.b64encode(msg).decode())
+
+    async def _handle_version_message(
+        self, sync_key: str, peer_id: str, payload: bytes
+    ) -> None:
+        """Handle incoming version announcement - compare and initiate sync/migration."""
+        data = self._sync_key_data.get(sync_key)
+        if not data:
+            return
+
+        conn = data.peers.get(peer_id)
+        if not conn:
+            return
+
+        remote_version = decode_version(payload)
+        conn.remote_version = remote_version
+
+        local_version = self.local_version if self.local_version is not None else 0
+
+        # Sanity check: if remote is unreasonably far in the future, disconnect.
+        # "Future" is defined relative to local; an unset local (0) is always
+        # behind any real timestamp.
+        if local_version > 0 and remote_version > local_version + MAX_VERSION_DRIFT_MS:
+            print(
+                f"[P2PT] Remote version {remote_version} is more than "
+                f"{MAX_VERSION_DRIFT_MS} ahead of local {local_version}; "
+                "disconnecting peer."
+            )
+            self._remove_peer(sync_key, peer_id)
+            return
+
+        if remote_version > local_version:
+            # Remote is newer: initiate inbound migration to pull their full state.
+            await self._begin_inbound_migration(sync_key, peer_id, remote_version)
+            return
+
+        # Versions match (or we are at least as new). Mark ready and sync.
+        conn.version_ready = True
+        self._notify_status_change()
+        await self._send_state_vector(sync_key, peer_id)
+
+    async def _begin_inbound_migration(
+        self, sync_key: str, peer_id: str, new_version: int
+    ) -> None:
+        """Inbound migration: remote peer announced a newer version."""
+        print(
+            f"[P2PT] Beginning inbound migration to version {new_version} "
+            f"from {peer_id[:8]}..."
+        )
+
+        sync_key_data = self._sync_key_data.get(sync_key)
+        if not sync_key_data:
+            return
+        conn = sync_key_data.peers.get(peer_id)
+        if not conn:
+            return
+
+        # Re-use existing connection as migration source. Their version is now
+        # our local version.
+        conn.is_migration_source = True
+        conn.version_ready = True
+        self.local_version = new_version
+
+        old_doc = self.ydoc
+        new_doc = Doc()
+
+        self.pending_migration = PendingMigration(
+            old_doc=old_doc,
+            new_doc=new_doc,
+            new_version=new_version,
+            sync_key=sync_key,
+            peer_id=peer_id,
+            has_handler=self.on_migration is not None,
+            state_received=False,
+        )
+
+        # Send our (empty) state vector to the migration source to prompt their
+        # full state update.
+        await self._send_state_vector(sync_key, peer_id)
+
+    async def _finish_inbound_migration_if_ready(self) -> None:
+        """Called from handleStateUpdate when inbound migration state is received."""
+        m = self.pending_migration
+        if not m or m.state_received:
+            return
+
+        m.state_received = True
+
+        # Drop the migration source. Their version is stale relative to new doc.
+        try:
+            self._remove_peer(m.sync_key, m.peer_id)
+        except Exception as e:
+            print(f"[P2PT] Failed to drop migration source peer: {e}")
+
+        cb = self.on_migration
+        if cb:
+            try:
+                await cb(m.old_doc, m.new_doc)
+            except Exception as e:
+                print(f"[P2PT] onMigration callback failed: {e}")
+
+        payload = {
+            "old_doc": m.old_doc,
+            "new_doc": m.new_doc,
+            "version": m.new_version,
+            "has_handler": cb is not None,
+        }
+
+        self.pending_migration = None
+
+        self._emit_migration(payload)
+
+    def set_local_version(self, version: int) -> None:
+        """Set the local database version (e.g., after loading from storage)."""
+        self.local_version = version
+
+    def swap_doc(self, new_doc: Doc, new_version: int) -> None:
+        """Swap the underlying doc and update stored version."""
+        # Detach old doc observer
+        if self._doc_observer:
+            try:
+                if hasattr(self.ydoc, 'unobserve'):
+                    self.ydoc.unobserve(self._doc_observer)
+            except Exception:
+                pass
+
+        self.ydoc = new_doc
+        self.local_version = new_version
+
+        # Rebind observer to new doc
+        if hasattr(new_doc, 'observe'):
+            self._doc_observer = self._handle_doc_change
+            new_doc.observe(self._doc_observer)
+
+        print(f"[P2PT] Swapped doc to version {new_version}")
+
+    async def handle_migration(
+        self, new_doc: Doc, new_version: int
+    ) -> None:
+        """Locally-initiated migration: disconnect, swap, reconnect."""
+        print(f"[P2PT] handleMigration: swapping doc to version {new_version}")
+
+        # Disconnect all peers first to avoid sending half-written updates.
+        for sync_key, data in self._sync_key_data.items():
+            for peer_id in list(data.peers.keys()):
+                self._remove_peer(sync_key, peer_id)
+
+        # Swap the doc
+        self.swap_doc(new_doc, new_version)
+
+        # Re-handshake: just call start() since the p2pt instances are still
+        # active (we already removed peers from data.peers but kept sync_key_data
+        # and tracker subscriptions). The sync keys stay the same, but the new
+        # local version will be announced on next handshake.
+        await self.start()
+
+        self._notify_status_change()
+
     async def _handle_state_vector(
         self, sync_key: str, peer_id: str, payload: bytes
     ) -> None:
@@ -874,8 +1156,15 @@ class P2PTSyncProvider:
         if not conn or not conn.data_channel:
             return
 
-        # Encode our state as update based on their state vector
-        state_update = encode_state_as_update(self.ydoc, payload)
+        # During an inbound migration, the peer is our migration source.
+        # Send our FULL state regardless of their state vector (we're pulling
+        # their data into our fresh doc).
+        if conn.is_migration_source:
+            # Encode entire doc state as update (no filtering)
+            state_update = encode_state_as_update(self.pending_migration.new_doc, b"")
+        else:
+            # Normal sync: encode our state relative to their state vector
+            state_update = encode_state_as_update(self.ydoc, payload)
         msg = create_message(MSG_STATE_UPDATE, state_update)
         conn.data_channel.send(base64.b64encode(msg).decode())
 
@@ -883,12 +1172,23 @@ class P2PTSyncProvider:
         self, sync_key: str, peer_id: str, payload: bytes
     ) -> None:
         """Handle incoming state update - apply to document."""
+        # During an inbound migration, route to the new doc.
+        m = self.pending_migration
+        if m:
+            apply_update(m.new_doc, payload, peer_id)
+            await self._finish_inbound_migration_if_ready()
+            return
         apply_update(self.ydoc, payload, peer_id)
 
     def _handle_doc_update(
         self, sync_key: str, peer_id: str, payload: bytes
     ) -> None:
         """Handle document update from peers."""
+        # During an inbound migration, route to the new doc.
+        m = self.pending_migration
+        if m:
+            apply_update(m.new_doc, payload, peer_id)
+            return
         apply_update(self.ydoc, payload, peer_id)
 
     def _handle_awareness_update(
@@ -902,7 +1202,7 @@ class P2PTSyncProvider:
             print(f"[P2PT] Failed to parse awareness update: {e}")
 
     def _broadcast_awareness_update(self) -> None:
-        """Broadcast awareness update to all validated peers."""
+        """Broadcast awareness update to all validated, version-matched peers."""
         local_state = self.get_awareness()
         if not local_state:
             return
@@ -912,21 +1212,29 @@ class P2PTSyncProvider:
 
         for data in self._sync_key_data.values():
             for conn in data.peers.values():
-                if conn.validated and conn.data_channel:
-                    if conn.data_channel.readyState == "open":
-                        try:
-                            conn.data_channel.send(base64.b64encode(msg).decode())
-                        except Exception as e:
-                            print(f"[P2PT] Failed to send awareness update: {e}")
+                if (
+                    conn.validated
+                    and conn.version_ready
+                    and conn.data_channel
+                    and conn.data_channel.readyState == "open"
+                ):
+                    try:
+                        conn.data_channel.send(base64.b64encode(msg).decode())
+                    except Exception as e:
+                        print(f"[P2PT] Failed to send awareness update: {e}")
 
     def _handle_doc_change(self, event: Any) -> None:
         """Handle document updates from pycrdt."""
+        # Don't broadcast during inbound migration (we're pulling fresh state).
+        if self.pending_migration:
+            return
+
         update_data = json.dumps(dict(self.ydoc._data)).encode()
         msg = create_message(MSG_DOC_UPDATE, update_data)
 
         for data in self._sync_key_data.values():
             for peer_id, conn in data.peers.items():
-                if not conn.validated or not conn.data_channel:
+                if not conn.validated or not conn.version_ready or not conn.data_channel:
                     continue
 
                 if conn.data_channel.readyState == "open":

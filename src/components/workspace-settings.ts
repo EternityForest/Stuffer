@@ -15,10 +15,14 @@ import {
   setDefaultCategory,
   addWorkspaceSyncKey,
   removeWorkspaceSyncKey,
+  migrateWorkspace,
+  getStateVectorSize,
+  getEstimatedDbSize,
 } from "../services/storage.js";
 import {
   getWorkspaceLocalSettings,
   getSyncKeys,
+  getWorkspaceVersion,
 } from "../services/local-settings.js";
 import jsQR from "jsqr";
 
@@ -85,6 +89,18 @@ export class WorkspaceSettings extends LitElement {
   @state()
   declare newSyncKeyInput: string;
 
+  @state()
+  declare migrating: boolean;
+
+  @state()
+  declare stateVectorSize: number;
+
+  @state()
+  declare dbSize: number;
+
+  @state()
+  declare dbVersion: bigint;
+
   private statusInterval: number | null = null;
   private fileInput: HTMLInputElement | null = null;
   private boundScanSyncEvent: EventListener | null = null;
@@ -113,6 +129,10 @@ export class WorkspaceSettings extends LitElement {
     this.showScanSync = false;
     this.isScanningForSync = false;
     this.newSyncKeyInput = "";
+    this.migrating = false;
+    this.stateVectorSize = 0;
+    this.dbSize = 0;
+    this.dbVersion = 0n;
   }
 
   async connectedCallback() {
@@ -253,6 +273,11 @@ export class WorkspaceSettings extends LitElement {
         this.syncToPeer =
           getWorkspaceLocalSettings(this.workspaceKey).syncPeerId || "";
         this.newsyncToPeer = this.syncToPeer;
+
+        // Load database stats
+        this.stateVectorSize = await getStateVectorSize(this.workspaceKey);
+        this.dbSize = await getEstimatedDbSize(this.workspaceKey);
+        this.dbVersion = getWorkspaceVersion(this.workspaceKey);
       }
     } catch (error) {
       console.error("Failed to load workspace data:", error);
@@ -470,6 +495,14 @@ export class WorkspaceSettings extends LitElement {
     );
   }
 
+  private formatBytes(bytes: number): string {
+    if (bytes === 0) return "0 B";
+    const k = 1024;
+    const sizes = ["B", "KB", "MB", "GB"];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
+  }
+
   private async handleExport() {
     if (!this.workspaceKey) {
       this.error = "Workspace key not available";
@@ -531,6 +564,46 @@ export class WorkspaceSettings extends LitElement {
     reader.readAsArrayBuffer(file);
   }
 
+  private async handleMigrateWorkspace() {
+    if (!this.workspaceKey) {
+      this.error = "Workspace key not available";
+      return;
+    }
+
+    const message =
+      "Compact Database?\n\n" +
+      "This rebuilds the workspace database from scratch to drop CRDT " +
+      "history and reclaim space. It will also bump the database version, " +
+      "so all other connected peers will pull the compacted copy.\n\n" +
+      "If the app has no migration handler registered the page will reload.\n\n" +
+      "Continue?";
+
+    if (!confirm(message)) {
+      return;
+    }
+
+    this.migrating = true;
+    this.error = null;
+    this.importSuccess = null;
+
+    try {
+      await migrateWorkspace(this.workspaceKey);
+      // If a handler is registered, handleMigration restarts p2pt in place
+      // and we land back here with the new doc loaded.
+      this.importSuccess = "Workspace compacted successfully";
+      setTimeout(() => {
+        this.importSuccess = null;
+      }, 3000);
+    } catch (error) {
+      console.error("Failed to compact workspace:", error);
+      this.error = `Compact failed: ${
+        error instanceof Error ? error.message : String(error)
+      }`;
+    } finally {
+      this.migrating = false;
+    }
+  }
+
   render() {
     const statusText =
       this.status === "connected"
@@ -558,6 +631,24 @@ export class WorkspaceSettings extends LitElement {
               .value=${this.workspaceName}
               readonly
             />
+          </div>
+        </div>
+
+        <div class="section">
+          <h3>Database Stats</h3>
+          <div class="status-display">
+            <div class="status-line">
+              <span class="status-label">State Vector Size:</span>
+              <span class="status-value">${this.formatBytes(this.stateVectorSize)}</span>
+            </div>
+            <div class="status-line">
+              <span class="status-label">Estimated DB Size:</span>
+              <span class="status-value">${this.formatBytes(this.dbSize)}</span>
+            </div>
+            <div class="status-line">
+              <span class="status-label">Database Version:</span>
+              <span class="status-value">${this.dbVersion.toString()}</span>
+            </div>
           </div>
         </div>
 
@@ -831,6 +922,32 @@ export class WorkspaceSettings extends LitElement {
               @change=${(e: Event) => this.handleImportFile(e)}
             />
             <div class="warning">Importing will merge with existing data</div>
+          </div>
+        </div>
+
+        <div class="section">
+          <h3>Advanced</h3>
+          <div class="form-group">
+            <label>Compact Database</label>
+            <button
+              class="danger"
+              @click=${() => this.handleMigrateWorkspace()}
+              ?disabled=${this.migrating}
+              style="width: 100%;"
+            >
+              ${this.migrating ? "Compacting…" : "Compact Database"}
+            </button>
+            <div class="info">
+              Rebuilds the workspace database from scratch to drop CRDT
+              history and reclaim space. Bumps the database version so all
+              other connected peers will pull the compacted copy on their
+              next handshake.
+            </div>
+            <div class="warning">
+              If no migration handler is registered this will reload the
+              page to avoid showing UI state that references the old
+              database.
+            </div>
           </div>
         </div>
       </div>

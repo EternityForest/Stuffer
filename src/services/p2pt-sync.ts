@@ -30,6 +30,7 @@ const MSG_STATE_VECTOR = 0x03;
 const MSG_STATE_UPDATE = 0x04;
 const MSG_DOC_UPDATE = 0x05;
 const MSG_AWARENESS_UPDATE = 0x06;
+const MSG_VERSION = 0x07;
 
 // Default WebTorrent tracker URLs
 export const DEFAULT_TRACKERS = [
@@ -39,6 +40,10 @@ export const DEFAULT_TRACKERS = [
 
 // Validation timeout in milliseconds
 const PEER_VALIDATION_TIMEOUT = 60000;
+
+// Maximum drift (ms) for an incoming remote version before we treat it as "future"
+// and disconnect. 1 hour in the future is acceptable per spec.
+const MAX_VERSION_DRIFT_MS = BigInt(60 * 60 * 1000);
 
 // Per-sync-key p2pt instance data
 interface SyncKeyData {
@@ -54,6 +59,30 @@ interface PeerConnection {
   validated: boolean;
   queuedMessages: Uint8Array[];
   validationTimer: number | null;
+  // 64-bit database version announced by the remote peer. null until exchanged.
+  remoteVersion: bigint | null;
+  // True once we've both sent MSG_VERSION and the remote version matches ours.
+  versionReady: boolean;
+  // True if this peer is currently our migration source (we are pulling their
+  // full state into a fresh local doc). Used to gate outbound broadcasts and
+  // to know when the inbound migration is complete.
+  isMigrationSource: boolean;
+}
+
+// State for an in-flight inbound migration. Created when a peer announces a
+// newer version, cleared when their full state has been applied to the new
+// doc and the application migration callback has been invoked.
+interface PendingMigration {
+  oldDoc: Y.Doc;
+  newDoc: Y.Doc;
+  oldVersion: bigint;
+  newVersion: bigint;
+  // Sync key of the peer we're pulling from; we drop them after the
+  // migration completes since their announced version is stale.
+  syncKey: string;
+  peerId: string;
+  // Whether the full state-update from the migration source has been received.
+  stateReceived: boolean;
 }
 
 /**
@@ -72,8 +101,8 @@ async function sha256(message: string): Promise<string> {
  * Compute HMAC-SHA256
  */
 async function hmacSha256(
-  key: Uint8Array,
-  message: Uint8Array,
+  key: Uint8Array<ArrayBuffer>,
+  message: Uint8Array<ArrayBufferLike>,
 ): Promise<Uint8Array> {
   const cryptoKey = await crypto.subtle.importKey(
     "raw",
@@ -139,6 +168,25 @@ function createMessage(type: number, payload: Uint8Array): Uint8Array {
 }
 
 /**
+ * Encode a 64-bit database version as 8 little-endian bytes.
+ */
+function encodeVersion(version: bigint): Uint8Array {
+  const out = new Uint8Array(8);
+  const view = new DataView(out.buffer);
+  view.setBigUint64(0, version, true);
+  return out;
+}
+
+/**
+ * Decode 8 little-endian bytes to a BigInt. Returns 0n for empty/short payloads.
+ */
+function decodeVersion(payload: Uint8Array): bigint {
+  if (payload.length < 8) return 0n;
+  const view = new DataView(payload.buffer, payload.byteOffset, payload.byteLength);
+  return view.getBigUint64(0, true);
+}
+
+/**
  * P2PT Sync Provider
  *
  * A Yjs provider that uses p2pt for peer-to-peer synchronization.
@@ -153,6 +201,26 @@ export class P2PTSyncProvider extends Observable<any> {
 
   // Store document update handler reference for cleanup
   private updateHandler = this.handleDocumentUpdate.bind(this);
+
+  // 64-bit database version. null means "uninitialized"; peers will treat this as 0n.
+  private localVersion: bigint | null = null;
+
+  // Active inbound migration, if any. While set, state/doc updates from the
+  // migration source are applied to newDoc instead of ydoc.
+  private pendingMigration: PendingMigration | null = null;
+
+  /**
+   * Optional application-level migration callback. Receives the old and new Y.Doc
+   * AFTER the new doc has been populated from the remote peer, so the application
+   * can migrate any in-flight state that wasn't carried over (e.g. UI selections,
+   * pending local-only data).
+   *
+   * If not provided, the application is presumed to have stale UI state referring
+   * to the old doc; the caller is responsible for reloading.
+   */
+  public onMigration:
+    | ((oldDoc: Y.Doc, newDoc: Y.Doc, oldVersion: bigint, newVersion:bigint) => Promise<void> | void)
+    | null = null;
 
   // Callbacks for status updates
   public onStatusChange:
@@ -309,6 +377,9 @@ export class P2PTSyncProvider extends Observable<any> {
       validated: false,
       queuedMessages: [],
       validationTimer: null,
+      remoteVersion: null,
+      versionReady: false,
+      isMigrationSource: false,
     };
 
     data.peers.set(peer.id, conn);
@@ -400,9 +471,25 @@ export class P2PTSyncProvider extends Observable<any> {
       return;
     }
 
-    // Queue message if peer not validated (unless it's a challenge response)
-    if (!conn.validated && parsed.type !== MSG_CHALLENGE_RESP
-      && parsed.type !== MSG_CHALLENGE
+    // Queue message if peer not validated (allow challenge/version through)
+    if (
+      !conn.validated &&
+      parsed.type !== MSG_CHALLENGE_RESP &&
+      parsed.type !== MSG_CHALLENGE &&
+      parsed.type !== MSG_VERSION
+    ) {
+      conn.queuedMessages.push(dataBytes);
+      return;
+    }
+
+    // After validation, gate sync messages on version match. Challenge/version
+    // messages themselves are always allowed.
+    if (
+      conn.validated &&
+      !conn.versionReady &&
+      parsed.type !== MSG_CHALLENGE_RESP &&
+      parsed.type !== MSG_CHALLENGE &&
+      parsed.type !== MSG_VERSION
     ) {
       conn.queuedMessages.push(dataBytes);
       return;
@@ -449,6 +536,10 @@ export class P2PTSyncProvider extends Observable<any> {
 
       case MSG_AWARENESS_UPDATE:
         this.handleAwarenessUpdate(syncKey, peerId, parsed.payload);
+        break;
+
+      case MSG_VERSION:
+        await this.handleVersionMessage(syncKey, peerId, parsed.payload);
         break;
 
       default:
@@ -560,12 +651,241 @@ export class P2PTSyncProvider extends Observable<any> {
       }
       conn.queuedMessages = [];
 
-      // Send our state vector
-      await this.sendStateVector(syncKey, peerId);
+      // Send our version. The remote will respond with theirs. We don't send
+      // the state vector until versions match (handled in handleVersionMessage).
+      await this.sendVersion(syncKey, peerId);
     } else {
       console.warn(`[P2PT] Invalid challenge response from: ${peerId}`);
       this.removePeer(syncKey, peerId);
     }
+  }
+
+  /**
+   * Set our local database version. Should be called after loading from
+   * persistent storage. Subsequent peers will compare against this value.
+   */
+  setLocalVersion(version: bigint): void {
+    this.localVersion = version;
+  }
+
+  /**
+   * Swap the underlying Y.Doc and update the stored version. Used by the
+   * migration flow after a new doc has been populated and persisted.
+   */
+  swapDoc(newDoc: Y.Doc, newVersion: bigint): void {
+    // Detach old doc
+    try {
+      this.ydoc.off("update", this.updateHandler);
+    } catch {
+      // ignore
+    }
+
+    this.ydoc = newDoc;
+    this.localVersion = newVersion;
+
+    // Rebind update handler to the new doc
+    this.ydoc.on("update", this.updateHandler);
+
+    // Awareness is tied to the old doc; create a new one bound to the new doc.
+    // Any local awareness state is best-effort preserved.
+    try {
+      this.awareness.destroy();
+    } catch {
+      // ignore
+    }
+    this.awareness = new Awareness(newDoc);
+    this.awareness.on("change", () => {
+      this.broadcastAwarenessUpdate();
+    });
+  }
+
+  /**
+   * Send our database version to the peer.
+   */
+  private async sendVersion(
+    syncKey: string,
+    peerId: string,
+  ): Promise<void> {
+    const data = this.syncKeyData.get(syncKey);
+    if (!data) return;
+
+    const conn = data.peers.get(peerId);
+    if (!conn) return;
+
+    const version = this.localVersion ?? 0n;
+    const msg = createMessage(MSG_VERSION, encodeVersion(version));
+    data.p2pt.send(conn.peer, btoa(String.fromCharCode(...msg)));
+  }
+
+  /**
+   * Handle incoming version announcement. Compares against our local version
+   * and either proceeds with sync, triggers a migration, or disconnects.
+   */
+  private async handleVersionMessage(
+    syncKey: string,
+    peerId: string,
+    payload: Uint8Array,
+  ): Promise<void> {
+    const data = this.syncKeyData.get(syncKey);
+    if (!data) return;
+
+    const conn = data.peers.get(peerId);
+    if (!conn) return;
+
+    const remoteVersion = decodeVersion(payload);
+    conn.remoteVersion = remoteVersion;
+
+    const local = this.localVersion ?? 0n;
+
+    // Sanity check: if remote is unreasonably far in the future, disconnect.
+    // "Future" is defined relative to local; an unset local (0) is always
+    // behind any real timestamp.
+    if (local > 0n && remoteVersion > local + MAX_VERSION_DRIFT_MS) {
+      console.warn(
+        `[P2PT] Remote version ${remoteVersion} is more than ${MAX_VERSION_DRIFT_MS} ahead of local ${local}; disconnecting peer.`,
+      );
+      this.removePeer(syncKey, peerId);
+      return;
+    }
+
+    if (remoteVersion > local) {
+      // Remote is newer: keep them connected as the migration source so we
+      // can pull their full state into a fresh newDoc, run the application
+      // migration callback, then emit "migration" for the storage layer.
+      await this.beginInboundMigration(syncKey, peerId, remoteVersion);
+      return;
+    }
+
+    // Versions match (or we are at least as new). Mark ready and kick off sync.
+    conn.versionReady = true;
+    this.notifyStatusChange();
+    await this.sendStateVector(syncKey, peerId);
+  }
+
+  /**
+   * Inbound migration: remote peer announced a newer version. Mark them as
+   * our migration source, create a fresh Y.Doc, and request their full state.
+   * Once the full state arrives, the application migration callback runs (if
+   * registered), and a "migration" event is emitted so the storage layer can
+   * persist the new doc, swap it in, and restart p2pt.
+   */
+  private async beginInboundMigration(
+    syncKey: string,
+    peerId: string,
+    newVersion: bigint,
+  ): Promise<void> {
+    console.log(
+      `[P2PT] Beginning inbound migration to version ${newVersion} from ${peerId}`,
+    );
+
+    const conn = this.syncKeyData.get(syncKey)?.peers.get(peerId);
+    if (!conn) return;
+
+    // Re-use the existing connection as our migration source. Their version
+    // is now our local version.
+    conn.isMigrationSource = true;
+    conn.versionReady = true;
+    const oldVersion = this.localVersion ?? 0n;
+    this.localVersion = newVersion;
+
+    const oldDoc = this.ydoc;
+    const newDoc = new Y.Doc();
+
+    this.pendingMigration = {
+      oldDoc,
+      newDoc,
+      oldVersion,
+      newVersion,
+      syncKey,
+      peerId,
+      stateReceived: false,
+    };
+
+    // Send our (empty) state vector to the migration source. This prompts
+    // them to reply with their full state update, which is then applied to
+    // pendingMigration.newDoc in handleStateUpdate.
+    await this.sendStateVector(syncKey, peerId);
+  }
+
+  /**
+   * Called from handleStateUpdate/handleDocUpdate when an inbound update from
+   * the migration source arrives. Applies the update to the pending new doc
+   * and, on the first message from the source, finalizes the migration.
+   */
+  private async finishInboundMigrationIfReady(): Promise<void> {
+    const m = this.pendingMigration;
+    if (!m || m.stateReceived) return;
+
+    m.stateReceived = true;
+
+    // Drop the migration source. Their announced version is stale relative
+    // to our new doc; we'll re-handshake after the storage layer swaps.
+    try {
+      this.removePeer(m.syncKey, m.peerId);
+    } catch (e) {
+      console.error("[P2PT] Failed to drop migration source peer:", e);
+    }
+
+    const cb = this.onMigration;
+    if (cb) {
+      try {
+        await cb(m.oldDoc, m.newDoc, m.oldVersion, m.newVersion);
+      } catch (e) {
+        console.error("[P2PT] onMigration callback failed:", e);
+      }
+    }
+
+    const payload = {
+      oldDoc: m.oldDoc,
+      newDoc: m.newDoc,
+      version: m.newVersion,
+    };
+
+    this.pendingMigration = null;
+
+    this.emit("migration", [payload]);
+  }
+
+  /**
+   * Locally-initiated migration. Disconnects from all peers to avoid sending
+   * corrupt data, swaps in the new doc, and re-establishes tracker
+   * connections. The caller is responsible for ensuring newDoc is the
+   * already-persisted replacement doc and that newVersion matches what was
+   * written to storage.
+   */
+  async handleMigration(newDoc: Y.Doc, newVersion: bigint): Promise<void> {
+    console.log(
+      `[P2PT] handleMigration: swapping doc to version ${newVersion}`,
+    );
+
+    // Disconnect all peers first to avoid sending half-written updates from
+    // the old doc.
+    for (const [syncKey, data] of this.syncKeyData) {
+      for (const peerId of Array.from(data.peers.keys())) {
+        this.removePeer(syncKey, peerId);
+      }
+      if (data.p2pt) {
+        try {
+          data.p2pt.destroy();
+        } catch (e) {
+          console.error("[P2PT] Error destroying p2pt during migration:", e);
+        }
+      }
+      // Re-create p2pt instance so we re-handshake fresh with the new version.
+      // We can't reuse the old instance because its info_hash is unchanged
+      // (it's derived from the sync key), but we need new connections.
+      data.p2pt = null;
+    }
+
+    this.swapDoc(newDoc, newVersion);
+
+    // Recreate p2pt instances for each sync key and re-handshake.
+    for (const syncKey of Array.from(this.syncKeyData.keys())) {
+      await this.createSyncKeyData(syncKey);
+    }
+    await this.start();
+
+    this.notifyStatusChange();
   }
 
   /**
@@ -610,10 +930,22 @@ export class P2PTSyncProvider extends Observable<any> {
    * Handle incoming state update - apply to document
    */
   private async handleStateUpdate(
-    syncKey: string,
-    peerId: string,
+    _syncKey: string,
+    _peerId: string,
     payload: Uint8Array,
   ): Promise<void> {
+    // During an inbound migration, route the migration source's state into
+    // the new (blank) doc, not the live one.
+    const m = this.pendingMigration;
+    if (m) {
+      try {
+        Y.applyUpdate(m.newDoc, payload, this);
+      } catch (e) {
+        console.error("[P2PT] Failed to apply migration source update to newDoc:", e);
+      }
+      await this.finishInboundMigrationIfReady();
+      return;
+    }
     Y.applyUpdate(this.ydoc, payload, this);
   }
 
@@ -625,6 +957,15 @@ export class P2PTSyncProvider extends Observable<any> {
     peerId: string,
     payload: Uint8Array,
   ): void {
+    const m = this.pendingMigration;
+    if (m) {
+      try {
+        Y.applyUpdate(m.newDoc, payload, this);
+      } catch (e) {
+        console.error("[P2PT] Failed to apply migration source update to newDoc:", e);
+      }
+      return;
+    }
     Y.applyUpdate(this.ydoc, payload, this);
   }
 
@@ -645,7 +986,7 @@ export class P2PTSyncProvider extends Observable<any> {
   }
 
   /**
-   * Broadcast awareness update to all validated peers
+   * Broadcast awareness update to all validated, version-matched peers
    */
   private broadcastAwarenessUpdate(): void {
     const localState = this.awareness.getLocalState();
@@ -658,7 +999,7 @@ export class P2PTSyncProvider extends Observable<any> {
 
     for (const [_syncKey, data] of this.syncKeyData) {
       for (const conn of data.peers.values()) {
-        if (conn.validated && data.p2pt) {
+        if (conn.validated && conn.versionReady && data.p2pt) {
           try {
               data.p2pt.send(conn.peer, btoa(String.fromCharCode(...msg)));
             } catch (e) {
@@ -682,10 +1023,10 @@ export class P2PTSyncProvider extends Observable<any> {
 
     const msg = createMessage(MSG_DOC_UPDATE, update);
 
-    // Send to all validated peers in all sync keys
+    // Send to all validated, version-matched peers in all sync keys
     for (const [_syncKey, data] of this.syncKeyData) {
       for (const [peerId, conn] of data.peers) {
-        if (!conn.validated || !data.p2pt) continue;
+        if (!conn.validated || !conn.versionReady || !data.p2pt) continue;
 
         // Don't send back to the peer that sent us this update
         if (origin === peerId) continue;
