@@ -10,6 +10,13 @@ import {
 } from "../services/storage.js";
 import jsQR from "jsqr";
 import { scanFrameForCode } from "../services/ocr-scanner.js";
+import {
+  applyTorch,
+  getVideoTrack,
+  isFlashEnabled,
+  setFlashEnabled,
+  trackSupportsTorch,
+} from "../services/scanner-flash.js";
 import { formatID12LabelStart } from "../utils/id12.js";
 
 @customElement("add-remove-item")
@@ -49,6 +56,12 @@ export class AddRemoveItem extends LitElement {
   @state()
   declare toastType: "success" | "info" | "error";
 
+  @state()
+  declare torchSupported: boolean;
+
+  @state()
+  declare flashOn: boolean;
+
   private videoElement: HTMLVideoElement | null = null;
   private scanningInterval: number | null = null;
   private audioContext: AudioContext | null = null;
@@ -67,6 +80,8 @@ export class AddRemoveItem extends LitElement {
     this.toastType = "success";
         this.searchQuery = "";
     this.id12Disambiguator = "";
+    this.torchSupported = false;
+    this.flashOn = false;
 
   }
 
@@ -81,6 +96,7 @@ export class AddRemoveItem extends LitElement {
     this.boundGlobalTagScan = this.globalTagScan.bind(this) as typeof this.boundGlobalTagScan
     globalThis.addEventListener("globalTagScan", this.boundGlobalTagScan );
     this.loadID12Disambiguator();
+    this.startScanning();
   }
 
   private async loadID12Disambiguator() {
@@ -123,6 +139,14 @@ export class AddRemoveItem extends LitElement {
           </button>
 
             <nfc-toggle-button autostart="true"></nfc-toggle-button>
+
+          ${this.isScanning && this.torchSupported
+            ? html`
+                <button @click=${() => this.toggleFlash()}>
+                  ${this.flashOn ? "Flash Off" : "Flash On"}
+                </button>
+              `
+            : ""}
 
           <button class="secondary-btn" @click=${() => this.goBack()}>
             Back
@@ -360,18 +384,26 @@ export class AddRemoveItem extends LitElement {
       });
 
       this.isScanning = true;
-      this.requestUpdate();
+      await this.updateComplete;
 
-      setTimeout(() => {
-        this.videoElement = this.querySelector(
-          "#qr-video"
-        ) as HTMLVideoElement;
-        if (this.videoElement) {
-          this.videoElement.srcObject = stream;
-          this.videoElement.play();
-          this.startQRScanning();
-        }
-      }, 0);
+      this.videoElement = this.querySelector(
+        "#qr-video"
+      ) as HTMLVideoElement;
+      if (!this.videoElement) {
+        return;
+      }
+
+      this.videoElement.srcObject = stream;
+      this.videoElement.play();
+
+      const track = stream.getVideoTracks()[0] ?? null;
+      this.torchSupported = trackSupportsTorch(track);
+      this.flashOn = this.torchSupported && isFlashEnabled();
+      if (track && this.flashOn) {
+        await applyTorch(track, true);
+      }
+
+      this.startQRScanning();
     } catch (error) {
       alert(`Camera access denied or not available: ${error}`);
       this.isScanning = false;
@@ -380,6 +412,7 @@ export class AddRemoveItem extends LitElement {
 
   private stopScanning() {
     this.isScanning = false;
+    this.torchSupported = false;
     if (this.videoElement?.srcObject) {
       const tracks = (this.videoElement.srcObject as MediaStream).getTracks();
       tracks.forEach((track) => track.stop());
@@ -388,6 +421,23 @@ export class AddRemoveItem extends LitElement {
     if (this.scanningInterval !== null) {
       clearInterval(this.scanningInterval);
       this.scanningInterval = null;
+    }
+  }
+
+  private async toggleFlash() {
+    const track = getVideoTrack(this.videoElement);
+    if (!track) {
+      return;
+    }
+
+    const next = !this.flashOn;
+    try {
+      await applyTorch(track, next);
+      this.flashOn = next;
+      setFlashEnabled(next);
+    } catch (error) {
+      console.error("Failed to toggle flash:", error);
+      this.showToast("Could not toggle flash", "error");
     }
   }
 

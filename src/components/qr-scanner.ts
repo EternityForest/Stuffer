@@ -8,6 +8,13 @@ import {
 } from "../services/storage.js";
 import jsQR from "jsqr";
 import { scanFrameForCode } from "../services/ocr-scanner.js";
+import {
+  applyTorch,
+  getVideoTrack,
+  isFlashEnabled,
+  setFlashEnabled,
+  trackSupportsTorch,
+} from "../services/scanner-flash.js";
 import "./nfc-toggle-button.js";
 
 @customElement("qr-scanner")
@@ -112,12 +119,20 @@ export class QrScanner extends LitElement {
   @state()
   declare toastType: "success" | "error";
 
+  @state()
+  declare torchSupported: boolean;
+
+  @state()
+  declare flashOn: boolean;
+
   constructor() {
     super();
     this.isScanning = false;
     this.scannedItems = [];
     this.toastMessage = "";
     this.toastType = "success";
+    this.torchSupported = false;
+    this.flashOn = false;
   }
 
   private videoElement: HTMLVideoElement | null = null;
@@ -205,6 +220,13 @@ export class QrScanner extends LitElement {
       if (this.videoElement) {
         this.videoElement.srcObject = stream;
 
+        const track = stream.getVideoTracks()[0] ?? null;
+        this.torchSupported = trackSupportsTorch(track);
+        this.flashOn = this.torchSupported && isFlashEnabled();
+        if (track && this.flashOn) {
+          await applyTorch(track, true);
+        }
+
         // Wait for video to be ready before scanning
         const playPromise = this.videoElement.play();
         if (playPromise !== undefined) {
@@ -239,6 +261,24 @@ export class QrScanner extends LitElement {
     }
 
     this.isScanning = false;
+    this.torchSupported = false;
+  }
+
+  private async toggleFlash() {
+    const track = getVideoTrack(this.videoElement);
+    if (!track) {
+      return;
+    }
+
+    const next = !this.flashOn;
+    try {
+      await applyTorch(track, next);
+      this.flashOn = next;
+      setFlashEnabled(next);
+    } catch (error) {
+      console.error("Failed to toggle flash:", error);
+      this.showToast("Could not toggle flash", "error");
+    }
   }
 
   private startQRScanning() {
@@ -367,6 +407,13 @@ export class QrScanner extends LitElement {
           <button @click=${() => this.toggleScanning()}>
             ${this.isScanning ? "Stop Camera" : "Start Camera"}
           </button>
+          ${this.isScanning && this.torchSupported
+            ? html`
+                <button @click=${() => this.toggleFlash()}>
+                  ${this.flashOn ? "Flash Off" : "Flash On"}
+                </button>
+              `
+            : ""}
           <nfc-toggle-button autostart></nfc-toggle-button>
           <button @click=${() => this.goBack()}>Back</button>
         </div>
