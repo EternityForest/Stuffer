@@ -57,7 +57,10 @@ function ensureWorker(): void {
       const callback = pending.get(data.id as number);
       if (!callback) return;
       pending.delete(data.id as number);
-      callback(extractCode(data.items, data.text));
+      console.log("OCR result:", data);
+      if(data.confidence>0.93){
+        callback(extractCode(data.items, data.text));
+      }
     }
   };
 

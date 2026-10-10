@@ -3,9 +3,15 @@
 Live app: https://eternityforest.github.io/Stuffer/index.html
 
 Create objects, add contents to those objects,
-scan QR codes to quickly add and remove.
+scan QR codes or ID12 OCR codes to quickly add and remove.
 
 There is no backend, the entire app runs in the browser.
+
+### ID12 Codes
+
+These are any code of the form 9999ABC-0001 and work anywhere a QR does.
+
+
 
 
 ### Items
