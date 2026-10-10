@@ -28,6 +28,43 @@ let lastScanAt = 0;
 let scratchCanvas: HTMLCanvasElement | null = null;
 const pending = new Map<number, PendingCallback>();
 
+function getEditDistance(a: string, b: string): number {
+  if (a === b) return 0;
+  if (a.length === 0) return b.length;
+  if (b.length === 0) return a.length;
+
+  let v0 = new Array(b.length + 1);
+  let v1 = new Array(b.length + 1);
+
+  // Initialize v0 (the base row)
+  for (let i = 0; i <= b.length; i++) {
+    v0[i] = i;
+  }
+
+  for (let i = 0; i < a.length; i++) {
+    // Calculate v1 (current row) from v0 (previous row)
+    v1[0] = i + 1;
+
+    for (let j = 0; j < b.length; j++) {
+      // Cost is 0 if characters match, 1 if they differ
+      const cost = a[i] === b[j] ? 0 : 1;
+      
+      v1[j + 1] = Math.min(
+        v1[j] + 1,      // Insertion
+        v0[j + 1] + 1,  // Deletion
+        v0[j] + cost    // Substitution
+      );
+    }
+
+    // Copy v1 to v0 for the next iteration
+    for (let j = 0; j <= b.length; j++) {
+      v0[j] = v1[j];
+    }
+  }
+
+  return v1[b.length];
+}
+
 function ensureWorker(): void {
   if (workerStarted) return;
   workerStarted = true;
@@ -90,6 +127,9 @@ function extractCode(items: unknown, text: unknown): string | null {
   return null;
 }
 
+
+let lastCode = "";
+let lastCodeTime = 0;
 /**
  * Feed one video frame into the shared OCR pipeline.
  *
@@ -143,7 +183,24 @@ export function scanFrameForCode(
   inFlight = true;
   lastScanAt = now;
   pending.set(id, (rawCode, confidence) => {
-    if (rawCode) onCode(OCR_ID_PREFIX + rawCode, confidence);
+    if (rawCode) {
+
+      // If there is a very similar code in the past 5 seconds,
+      // detect this as an unstable read and fudge the confidence
+      // to reflect this, unless the confidence value is extremely high
+      if(now - lastCodeTime < 5000) {
+        let editDistance = getEditDistance(lastCode, rawCode);
+        if (editDistance == 1) {
+          if(confidence< 0.98){
+            confidence = Math.min(confidence, 0.91);
+          }
+        }
+      }
+
+      lastCode = rawCode;
+      lastCodeTime = now;
+      onCode(OCR_ID_PREFIX + rawCode, confidence);
+    }
   });
 
   createImageBitmap(scratchCanvas)
