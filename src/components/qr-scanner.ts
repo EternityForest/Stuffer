@@ -294,8 +294,9 @@ export class QrScanner extends LitElement {
 
     // OCR runs in parallel in a worker and feeds the same scan handler, so
     // printed labels behave exactly like QR codes.
-    scanFrameForCode(this.videoElement, (scanned) => {
-      if (this.isScanning) this.handleQRScan(scanned);
+    scanFrameForCode(this.videoElement, (scanned, confidence) => {
+      if (confidence < 0.90) return;
+      if (this.isScanning) this.handleQRScan(scanned, confidence);
     });
 
     const imageData = ctx.getImageData(
@@ -315,7 +316,7 @@ export class QrScanner extends LitElement {
     }
   }
 
-  private async handleQRScan(qrData: string) {
+  private async handleQRScan(qrData: string, confidence: number = 1) {
     try {
       const resolvedId = await resolveItemId(this.workspaceKey, qrData);
       const item = await getItem(this.workspaceKey, resolvedId);
@@ -351,6 +352,10 @@ export class QrScanner extends LitElement {
         this.showToast(`✓ Scanned: ${item.title}`, "success");
       }
 
+      if(confidence>=0.94){ 
+        this.navigateToObject(item.id);
+        return;
+      }
       // Continue scanning if camera is active
       if (this.isScanning && this.videoElement) {
         this.startQRScanning();

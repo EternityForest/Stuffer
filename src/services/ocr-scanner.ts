@@ -17,7 +17,7 @@ const OCR_TARGET_ASPECT = 3;
 const OCR_TARGET_WIDTH = 120;
 const OCR_MIN_INTERVAL_MS = 250;
 
-type PendingCallback = (rawCode: string | null) => void;
+type PendingCallback = (rawCode: string | null, confidence: number) => void;
 
 let worker: Worker | null = null;
 let workerStarted = false;
@@ -58,9 +58,7 @@ function ensureWorker(): void {
       if (!callback) return;
       pending.delete(data.id as number);
       console.log("OCR result:", data);
-      if(data.confidence>0.93){
-        callback(extractCode(data.items, data.text));
-      }
+      callback(extractCode(data.items, data.text), data.confidence);
     }
   };
 
@@ -101,7 +99,7 @@ function extractCode(items: unknown, text: unknown): string | null {
  */
 export function scanFrameForCode(
   video: HTMLVideoElement,
-  onCode: (code: string) => void
+  onCode: (code: string, confidence: number) => void
 ): void {
   if (!workerStarted) ensureWorker();
   if (!worker || !workerReady || inFlight) return;
@@ -144,8 +142,8 @@ export function scanFrameForCode(
   const id = nextMessageId++;
   inFlight = true;
   lastScanAt = now;
-  pending.set(id, (rawCode) => {
-    if (rawCode) onCode(OCR_ID_PREFIX + rawCode);
+  pending.set(id, (rawCode, confidence) => {
+    if (rawCode) onCode(OCR_ID_PREFIX + rawCode, confidence);
   });
 
   createImageBitmap(scratchCanvas)

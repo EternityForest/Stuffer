@@ -188,7 +188,8 @@ export class AliasEditor extends LitElement {
         ctx.drawImage(this.videoElement, 0, 0);
 
         // Parallel OCR: printed labels can be bound as aliases just like QR.
-        scanFrameForCode(this.videoElement, (scanned) => {
+        scanFrameForCode(this.videoElement, (scanned, confidence) => {
+          if (confidence < 0.95) return;
           if (this.isScanning) this.handleQRCodeDetected(scanned);
         });
 

@@ -428,7 +428,8 @@ export class ItemSelector extends LitElement {
         ctx.drawImage(this.videoElement, 0, 0);
 
         // Parallel OCR: recognized printed labels route through the QR handler.
-        scanFrameForCode(this.videoElement, (scanned) => {
+        scanFrameForCode(this.videoElement, (scanned, confidence) => {
+          if (confidence < 0.92) return;
           if (this.isScanning) this.handleQRScan(scanned);
         });
 

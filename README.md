@@ -9,8 +9,15 @@ There is no backend, the entire app runs in the browser.
 
 ### ID12 Codes
 
-These are any code of the form 9999ABC-0001 and work anywhere a QR does.
+These are any code of the form 9999ABC-0001 and work anywhere a QR does,
+and can be printed on a normal label printer.  PaddleOCR is used to scan them using in-browser AI.
 
+The add/remove items page will give you a suggested prefix.
+
+For extra reliability if your label maker supports it, increment the number by 11 instead of 1, to ensure that all tags differ in at least two digits.
+
+The first 4 leading digits are the current julian day number, wrapping at 9999.
+The 3 letters can be anything, and just exist to further help reduce the chance of duplicates, but they can also contain your initials or some other identifier.
 
 
 

@@ -454,7 +454,8 @@ export class AddRemoveItem extends LitElement {
         ctx.drawImage(this.videoElement, 0, 0);
 
         // Parallel OCR: recognized printed labels feed the same add/remove flow.
-        scanFrameForCode(this.videoElement, (scanned) => {
+        scanFrameForCode(this.videoElement, (scanned, confidence) => {
+          if (confidence < 0.95) return;
           if (this.isScanning) this.handleQRScan(scanned);
         });
 
