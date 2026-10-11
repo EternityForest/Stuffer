@@ -37,7 +37,7 @@ export function trackSupportsTorch(track: MediaStreamTrack | null): boolean {
     return false;
   }
   const capabilities = track.getCapabilities() as unknown as TorchCapabilities;
-  return capabilities.torch === true;
+  return Boolean(capabilities.torch);
 }
 
 export async function applyTorch(
