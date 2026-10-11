@@ -6,3 +6,6 @@ public/ort/
 *.log
 .env
 .env.local
+/.aider-desk
+__pycache__
+/.aider.input.history
