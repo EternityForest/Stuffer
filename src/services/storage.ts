@@ -319,6 +319,7 @@ export async function updateItemProperty(
   if (!item) throw new Error("Item not found");
 
   item.set(property, value);
+  item.set("modified", Math.floor(Date.now()/1000))
 }
 
 export interface ItemContentRecord {
@@ -391,7 +392,7 @@ export async function addItemToContents(
   const content = new Y.Map();
   content.set("itemId", itemId);
   content.set("checkedAt", new Date().toISOString());
-
+  container.set("modified", Math.floor(Date.now()/1000))
   contentsMap.set(itemId, content);
   updateItemProperty(workspaceKey, itemId, "inContainer", containerId);
 }
@@ -405,6 +406,7 @@ export async function removeItemFromContents(
   const objectsMap = doc.getMap("objects") as Y.Map<any>;
   const container = objectsMap.get(containerId) as Y.Map<any>;
   if (!container) throw new Error("Container not found");
+  container.set("modified", Math.floor(Date.now()/1000))
 
   const contentsMap = container.get("contents") as Y.Map<any>;
   contentsMap.delete(contentItemId);
@@ -433,6 +435,7 @@ export async function createLoadout(
     contentsMap.set(itemId, content);
   });
 
+  loadout.set("modified", Math.floor(Date.now()/1000))
   return loadoutId;
 }
 
@@ -541,6 +544,7 @@ export async function addItemToLoadout(
     contentsMap = new Y.Map();
     loadout.set("contents", contentsMap);
   }
+  loadout.set("modified", Math.floor(Date.now()/1000))
 
   const content = new Y.Map();
   contentsMap.set(itemId, content);
@@ -556,6 +560,7 @@ export async function removeItemFromLoadout(
   const loadout = objectsMap.get(loadoutId) as Y.Map<any>;
   if (!loadout) throw new Error("Loadout not found");
 
+  loadout.set("modified", Math.floor(Date.now()/1000))
   const contentsMap = loadout.get("contents") as Y.Map<any>;
   if (contentsMap) {
     contentsMap.delete(itemId);
