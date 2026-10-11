@@ -712,6 +712,25 @@ function buildMigratedDoc(oldDoc: Y.Doc): Y.Doc {
   return newDoc;
 }
 
+
+function deleteDatabaseAsync(dbName: string) {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.deleteDatabase(dbName);
+
+    request.onsuccess = (_event) => {
+      resolve(true); // Returns undefined
+    };
+
+    request.onerror = (_event) => {
+      reject(request.error);
+    };
+
+    request.onblocked = (_event) => {
+      console.warn(`Deletion of "${dbName}" is blocked by open connections.`);
+    };
+  });
+}
+
 /**
  * Replace the workspace's Y.Doc with a fresh one, persisting it to IndexedDB
  * and bumping the stored version. Used both by inbound migrations (provider
@@ -743,23 +762,7 @@ export async function replaceWorkspaceDoc(
   workspaceDocs.delete(workspaceKey);
 
   // Wipe the old IndexedDB so the new persistence starts from a clean slate.
-  await new Promise<void>((resolve) => {
-    const req = indexedDB.deleteDatabase(`stuffer-workspace-${workspaceKey}`);
-    req.onsuccess = () => resolve();
-    req.onerror = () => {
-      console.warn(
-        `Failed to delete old IndexedDB for ${workspaceKey}:`,
-        req.error,
-      );
-      resolve();
-    };
-    req.onblocked = () => {
-      console.warn(
-        `IndexedDB delete blocked for ${workspaceKey}; proceeding anyway`,
-      );
-      resolve();
-    };
-  });
+  await deleteDatabaseAsync(`stuffer-workspace-${workspaceKey}`);
 
   // Attach the new doc to IndexedDB and wait for it to flush.
   const persistence = new IndexeddbPersistence(
@@ -875,7 +878,7 @@ async function onInboundMigration(
       !newObjects.get(id) ||
       (oldObj.modified || 0) > (newObjects.get(id)?.modified || 0)
     ) {
-      newObjects.set(id, oldObj);
+      newObjects.set(id, oldObj.toJSON());
     }
   }
 
