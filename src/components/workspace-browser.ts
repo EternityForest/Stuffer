@@ -8,6 +8,7 @@ import {
   getCategoryItemsOverview,
   getDefaultCategory,
   createLoadout,
+  sortItemsForDisplay,
 } from "../services/storage.js";
 import "./nfc-toggle-button.js";
 
@@ -113,12 +114,16 @@ export class WorkspaceBrowser extends LitElement {
     }
     try {
       if (this.selectedCategory !== "all" && (this.searchQuery.length == 0)) {
-        this.objects = await getCategoryItemsOverview(
-          this.workspaceKey,
-          this.selectedCategory
+        this.objects = sortItemsForDisplay(
+          await getCategoryItemsOverview(
+            this.workspaceKey,
+            this.selectedCategory
+          )
         );
       } else {
-        this.objects = await getItemsOverview(this.workspaceKey);
+        this.objects = sortItemsForDisplay(
+          await getItemsOverview(this.workspaceKey)
+        );
       }
       this.workspaceName = (await getWorkspacesMap()).get(this.workspaceKey)
         ?.name as string;
