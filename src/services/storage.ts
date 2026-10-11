@@ -12,7 +12,11 @@ import {
   getWorkspaceVersion,
   setWorkspaceVersion,
 } from "./local-settings.js";
-import { P2PTSyncProvider, generateSyncKey, DEFAULT_TRACKERS } from "./p2pt-sync.js";
+import {
+  P2PTSyncProvider,
+  generateSyncKey,
+  DEFAULT_TRACKERS,
+} from "./p2pt-sync.js";
 import convert from "convert";
 
 interface WorkspaceMetadata {
@@ -26,7 +30,6 @@ const workspaceRegistry = new Map<string, WorkspaceMetadata>();
 const workspaceDocs = new Map<string, Y.Doc>();
 const workspacePersistence = new Map<string, IndexeddbPersistence>();
 let initPromise: Promise<void> | null = null;
-
 
 // Registry key for localStorage
 const REGISTRY_KEY = "stuffer:workspace-registry";
@@ -76,7 +79,7 @@ export async function getWorkspaceDoc(workspaceKey: string): Promise<Y.Doc> {
   const doc = new Y.Doc();
   const persistence = new IndexeddbPersistence(
     `stuffer-workspace-${workspaceKey}`,
-    doc
+    doc,
   );
 
   // Wait for sync
@@ -91,7 +94,7 @@ export async function getWorkspaceDoc(workspaceKey: string): Promise<Y.Doc> {
 }
 // Export for component listeners
 export async function getWorkspaceDocExported(
-  workspaceKey: string
+  workspaceKey: string,
 ): Promise<Y.Doc> {
   return getWorkspaceDoc(workspaceKey);
 }
@@ -167,7 +170,7 @@ export async function addItem(
   workspaceKey: string,
   itemName: string,
   uuid?: string,
-  type: "normal" | "loadout" = "normal"
+  type: "normal" | "loadout" = "normal",
 ) {
   const doc = await getWorkspaceDoc(workspaceKey);
   const objectsMap = doc.getMap("objects") as Y.Map<any>;
@@ -205,7 +208,7 @@ export async function getItemsOverview(workspaceKey: string) {
         item.get("inContainer") &&
         ((await lookupItemName(
           workspaceKey,
-          item.get("inContainer")
+          item.get("inContainer"),
         )) as string),
       type: (item.get("type") as "normal" | "loadout") || "normal",
     });
@@ -226,6 +229,8 @@ export async function lookupItemName(workspaceKey: string, itemId: string) {
 export async function deleteItem(workspaceKey: string, itemId: string) {
   const doc = await getWorkspaceDoc(workspaceKey);
   const objectsMap = doc.getMap("objects") as Y.Map<any>;
+  const deletedObjectsList = doc.getArray("deletedObjects") as Y.Array<any>;
+
   const contents = await getItemContents(workspaceKey, itemId);
 
   for (const content of contents) {
@@ -233,6 +238,10 @@ export async function deleteItem(workspaceKey: string, itemId: string) {
   }
 
   objectsMap.delete(itemId);
+  deletedObjectsList.push([itemId, Math.floor(Date.now() / 1000)]);
+  if (deletedObjectsList.length > 1000) {
+    deletedObjectsList.delete(0, 1);
+  }
 }
 
 export interface ItemData {
@@ -257,7 +266,7 @@ export interface ItemData {
 // Find real item id from alias
 export async function resolveItemId(
   workspaceKey: string,
-  itemId: string
+  itemId: string,
 ): Promise<string> {
   const doc = await getWorkspaceDoc(workspaceKey);
   const tagAliasesMap = doc.getMap("tagAliases") as Y.Map<any>;
@@ -271,7 +280,7 @@ export async function resolveItemId(
 
 export async function getItem(
   workspaceKey: string,
-  itemId: string
+  itemId: string,
 ): Promise<ItemData> {
   const doc = await getWorkspaceDoc(workspaceKey);
 
@@ -304,7 +313,7 @@ export async function updateItemProperty(
   workspaceKey: string,
   itemId: string,
   property: string,
-  value: any
+  value: any,
 ) {
   const doc = await getWorkspaceDoc(workspaceKey);
   const objectsMap = doc.getMap("objects") as Y.Map<any>;
@@ -312,7 +321,7 @@ export async function updateItemProperty(
   if (!item) throw new Error("Item not found");
 
   item.set(property, value);
-  item.set("modified", Math.floor(Date.now()/1000))
+  item.set("modified", Math.floor(Date.now() / 1000));
 }
 
 export interface ItemContentRecord {
@@ -322,7 +331,7 @@ export interface ItemContentRecord {
 }
 export async function getItemContents(
   workspaceKey: string,
-  itemId: string
+  itemId: string,
 ): Promise<Array<ItemContentRecord>> {
   const doc = await getWorkspaceDoc(workspaceKey);
   const objectsMap = doc.getMap("objects") as Y.Map<any>;
@@ -365,7 +374,7 @@ export async function getItemContents(
 export async function addItemToContents(
   workspaceKey: string,
   containerId: string,
-  itemId: string
+  itemId: string,
 ) {
   const doc = await getWorkspaceDoc(workspaceKey);
   const objectsMap = doc.getMap("objects") as Y.Map<any>;
@@ -385,7 +394,7 @@ export async function addItemToContents(
   const content = new Y.Map();
   content.set("itemId", itemId);
   content.set("checkedAt", new Date().toISOString());
-  container.set("modified", Math.floor(Date.now()/1000))
+  container.set("modified", Math.floor(Date.now() / 1000));
   contentsMap.set(itemId, content);
   updateItemProperty(workspaceKey, itemId, "inContainer", containerId);
 }
@@ -393,13 +402,13 @@ export async function addItemToContents(
 export async function removeItemFromContents(
   workspaceKey: string,
   containerId: string,
-  contentItemId: string
+  contentItemId: string,
 ) {
   const doc = await getWorkspaceDoc(workspaceKey);
   const objectsMap = doc.getMap("objects") as Y.Map<any>;
   const container = objectsMap.get(containerId) as Y.Map<any>;
   if (!container) throw new Error("Container not found");
-  container.set("modified", Math.floor(Date.now()/1000))
+  container.set("modified", Math.floor(Date.now() / 1000));
 
   const contentsMap = container.get("contents") as Y.Map<any>;
   contentsMap.delete(contentItemId);
@@ -411,7 +420,7 @@ export async function createLoadout(
   workspaceKey: string,
   title: string,
   description: string = "",
-  contents: Array<{ itemId: string }> = []
+  contents: Array<{ itemId: string }> = [],
 ) {
   // Create loadout as an item with type="loadout"
   const loadoutId = await addItem(workspaceKey, title, undefined, "loadout");
@@ -428,7 +437,7 @@ export async function createLoadout(
     contentsMap.set(itemId, content);
   });
 
-  loadout.set("modified", Math.floor(Date.now()/1000))
+  loadout.set("modified", Math.floor(Date.now() / 1000));
   return loadoutId;
 }
 
@@ -436,7 +445,7 @@ export async function saveObjectAsLoadout(
   workspaceKey: string,
   objectId: string,
   title: string,
-  description: string = ""
+  description: string = "",
 ) {
   const objectContents = await getItemContents(workspaceKey, objectId);
   const loadoutId = await createLoadout(
@@ -445,11 +454,16 @@ export async function saveObjectAsLoadout(
     description,
     objectContents.map((c) => ({
       itemId: c.id,
-    }))
+    })),
   );
 
   // Set this loadout as the selected loadout for the object
-  await updateItemProperty(workspaceKey, objectId, "selectedLoadout", loadoutId);
+  await updateItemProperty(
+    workspaceKey,
+    objectId,
+    "selectedLoadout",
+    loadoutId,
+  );
 
   return loadoutId;
 }
@@ -514,7 +528,7 @@ export async function updateLoadoutProperty(
   workspaceKey: string,
   loadoutId: string,
   property: string,
-  value: any
+  value: any,
 ) {
   return updateItemProperty(workspaceKey, loadoutId, property, value);
 }
@@ -522,7 +536,7 @@ export async function updateLoadoutProperty(
 export async function addItemToLoadout(
   workspaceKey: string,
   loadoutId: string,
-  itemId: string
+  itemId: string,
 ) {
   const doc = await getWorkspaceDoc(workspaceKey);
   const objectsMap = doc.getMap("objects") as Y.Map<any>;
@@ -537,7 +551,7 @@ export async function addItemToLoadout(
     contentsMap = new Y.Map();
     loadout.set("contents", contentsMap);
   }
-  loadout.set("modified", Math.floor(Date.now()/1000))
+  loadout.set("modified", Math.floor(Date.now() / 1000));
 
   const content = new Y.Map();
   contentsMap.set(itemId, content);
@@ -546,14 +560,14 @@ export async function addItemToLoadout(
 export async function removeItemFromLoadout(
   workspaceKey: string,
   loadoutId: string,
-  itemId: string
+  itemId: string,
 ) {
   const doc = await getWorkspaceDoc(workspaceKey);
   const objectsMap = doc.getMap("objects") as Y.Map<any>;
   const loadout = objectsMap.get(loadoutId) as Y.Map<any>;
   if (!loadout) throw new Error("Loadout not found");
 
-  loadout.set("modified", Math.floor(Date.now()/1000))
+  loadout.set("modified", Math.floor(Date.now() / 1000));
   const contentsMap = loadout.get("contents") as Y.Map<any>;
   if (contentsMap) {
     contentsMap.delete(itemId);
@@ -566,7 +580,7 @@ export async function deleteLoadout(workspaceKey: string, loadoutId: string) {
 
 export async function compareContentsToLoadout(
   workspaceKey: string,
-  objectId: string
+  objectId: string,
 ): Promise<{
   missing: Array<{ id: string; name: string; quantity: number }>;
   extra: Array<{ id: string; name: string; quantity: number }>;
@@ -754,6 +768,7 @@ export async function replaceWorkspaceDoc(
 export async function migrateWorkspace(workspaceKey: string): Promise<void> {
   const oldDoc = await getWorkspaceDoc(workspaceKey);
   const provider = p2ptProviders.get(workspaceKey);
+  const oldVersion = await getWorkspaceVersion(workspaceKey);
   const newVersion = BigInt(Date.now());
   const hasHandler = !!provider?.onMigration;
 
@@ -763,7 +778,7 @@ export async function migrateWorkspace(workspaceKey: string): Promise<void> {
 
   if (provider?.onMigration) {
     try {
-      await provider.onMigration(oldDoc, newDoc);
+      await provider.onMigration(oldDoc, newDoc, oldVersion, newVersion);
     } catch (e) {
       console.error("[P2PT] onMigration callback failed:", e);
     }
@@ -820,12 +835,63 @@ function waitForSync(persistence: IndexeddbPersistence): Promise<void> {
   });
 }
 
+async function onInboundMigration(
+  workspaceKey: string,
+  newDoc: Y.Doc,
+  version: bigint,
+) {
+  console.log(`[P2PT] Persisting migrated doc at version ${version}`);
+
+  const oldDoc = await getWorkspaceDoc(workspaceKey);
+  const oldObjects = oldDoc.getMap("objects") as Y.Map<any>;
+  const oldDeletedObjects = oldDoc.getArray("deletedObjects") as Y.Array<any>;
+
+  const newObjects = newDoc.getMap("objects") as Y.Map<any>;
+
+  // Iterate all objects in the old doc.
+  // If that object does not exist in the new doc, or if it does
+  // but the modification date on the old one is newer,
+  // copy it to newdoc. missing modification assume 0
+  for (const [id, oldObj] of oldObjects.entries()) {
+    if (
+      !newObjects.get(id) ||
+      (oldObj.modified || 0) > (newObjects.get(id)?.modified || 0)
+    ) {
+      newObjects.set(id, oldObj);
+    }
+  }
+
+  for (const i of oldDeletedObjects) {
+    if (!newObjects.get(i[0])) {
+      if (i[1] > (newObjects.get(i[0])?.modified || 0)) {
+        {
+          newObjects.delete(i[0]);
+        }
+      }
+    }
+  }
+
+  await replaceWorkspaceDoc(workspaceKey, newDoc, version);
+
+  // No application handler registered: UI state may reference the
+  // old doc, so we reload to start clean.
+  console.warn(
+    "[P2PT] Inbound migration with no onMigration handler; reloading page.",
+  );
+  try {
+    window.location.reload();
+  } catch {
+    // ignore (non-browser env)
+  }
+  return;
+}
+
 /**
  * Enable P2PT sync for a workspace
  */
 export async function enableWebRTC(
   workspaceKey: string,
-  signalingServers: string[] = DEFAULT_TRACKERS
+  signalingServers: string[] = DEFAULT_TRACKERS,
 ) {
   const doc = await getWorkspaceDoc(workspaceKey);
 
@@ -840,7 +906,7 @@ export async function enableWebRTC(
 
     if (syncKeys.length === 0) {
       console.log(
-        `Skipping sync for workspace ${workspaceKey}: No sync keys configured`
+        `Skipping sync for workspace ${workspaceKey}: No sync keys configured`,
       );
       return null as any;
     }
@@ -855,10 +921,7 @@ export async function enableWebRTC(
     // Set up status change handler
     provider.onStatusChange = (status) => {
       // Store status for getWebRTCStatus
-      console.log(
-        `[P2PT] Status change for ${workspaceKey}:`,
-        status
-      );
+      console.log(`[P2PT] Status change for ${workspaceKey}:`, status);
     };
 
     // Listen for inbound migration events. When the remote announces a
@@ -866,26 +929,8 @@ export async function enableWebRTC(
     // onMigration callback, and emits "migration". We then persist newDoc,
     // swap it in, and restart p2pt so the new version propagates.
     provider.on("migration", async (payload: any) => {
-      try {
-        const { newDoc, version, _hasHandler } = payload;
-
-        console.log(`[P2PT] Persisting migrated doc at version ${version}`);
-        await replaceWorkspaceDoc(workspaceKey, newDoc, version);
-
-        // No application handler registered: UI state may reference the
-        // old doc, so we reload to start clean.
-        console.warn(
-          "[P2PT] Inbound migration with no onMigration handler; reloading page."
-        );
-        try {
-          window.location.reload();
-        } catch {
-          // ignore (non-browser env)
-        }
-        return;
-      } catch (e) {
-        console.error("[P2PT] Failed to handle migration event:", e);
-      }
+      const { newDoc, version } = payload;
+      await onInboundMigration(workspaceKey, newDoc, version);
     });
 
     // Start the provider
@@ -896,7 +941,7 @@ export async function enableWebRTC(
 
     clearP2PTRetryTimers(workspaceKey);
     console.log(
-      `P2PT Sync enabled for workspace ${workspaceKey} with keys: ${syncKeys.join(", ")}`
+      `P2PT Sync enabled for workspace ${workspaceKey} with keys: ${syncKeys.join(", ")}`,
     );
     return provider;
   } catch (error) {
@@ -914,7 +959,7 @@ export async function enableWebRTC(
  */
 export async function addWorkspaceSyncKey(
   workspaceKey: string,
-  existingKey?: string
+  existingKey?: string,
 ): Promise<string> {
   const syncKey = existingKey || generateSyncKey();
   addSyncKey(workspaceKey, syncKey);
@@ -935,7 +980,7 @@ export async function addWorkspaceSyncKey(
  */
 export async function removeWorkspaceSyncKey(
   workspaceKey: string,
-  syncKey: string
+  syncKey: string,
 ): Promise<void> {
   removeSyncKey(workspaceKey, syncKey);
 
@@ -982,7 +1027,7 @@ function clearP2PTRetryTimers(workspaceKey: string) {
 export function getWebRTCRetryDelay(
   retryCount: number,
   baseDelay = 1000,
-  maxDelay = 480000
+  maxDelay = 480000,
 ): number {
   const exponentialDelay = baseDelay * Math.pow(2, Math.max(0, retryCount - 1));
   const cappedDelay = Math.min(maxDelay, exponentialDelay);
@@ -1001,14 +1046,14 @@ function scheduleP2PTRetry(workspaceKey: string) {
 
   console.log(
     `Scheduling P2PT retry for ${workspaceKey} in ${Math.round(
-      delayMs
-    )}ms (attempt ${retryCount})`
+      delayMs,
+    )}ms (attempt ${retryCount})`,
   );
 
   const timer = window.setTimeout(() => {
     p2ptRetryTimers.delete(workspaceKey);
     console.log(
-      `Attempting P2PT reconnect for ${workspaceKey} (attempt ${retryCount})`
+      `Attempting P2PT reconnect for ${workspaceKey} (attempt ${retryCount})`,
     );
     try {
       enableWebRTC(workspaceKey);
@@ -1055,80 +1100,13 @@ export function getWebRTCStatus(workspaceKey: string): {
   };
 }
 
-export async function updateWorkspaceLocalPeerId(
-  workspaceKey: string,
-  newSyncKey: string
-) {
-  // Legacy function - now adds a sync key instead
-  // Kept for backward compatibility
-  await getWorkspaceDoc(workspaceKey);
-
-  const syncKeys = getSyncKeys(workspaceKey);
-
-  // If no sync keys exist, add this one
-  if (syncKeys.length === 0) {
-    addSyncKey(workspaceKey, newSyncKey);
-  }
-
-  // Reconnect with new room
-  try {
-    disconnectWebRTC(workspaceKey);
-    await enableWebRTC(workspaceKey);
-  } catch (error) {
-    console.error("Failed to reconnect after sync key change:", error);
-  }
-}
-
-export async function updateWorkspaceSyncPeerId(
-  workspaceKey: string,
-  newSyncKey: string
-) {
-  // Legacy function - now adds a sync key instead
-  // Kept for backward compatibility
-  await getWorkspaceDoc(workspaceKey);
-
-  const syncKeys = getSyncKeys(workspaceKey);
-
-  // If no sync keys exist, add this one
-  if (syncKeys.length === 0) {
-    addSyncKey(workspaceKey, newSyncKey);
-  }
-
-  // Reconnect with new room
-  try {
-    disconnectWebRTC(workspaceKey);
-    await enableWebRTC(workspaceKey);
-  } catch (error) {
-    console.error("Failed to reconnect after sync key change:", error);
-  }
-}
-
-export async function updateWorkspaceSyncedMetadataProperty(
-  workspaceKey: string,
-  property: string,
-  value: any
-) {
-  const doc = await getWorkspaceDoc(workspaceKey);
-  const metadataMap = doc.getMap("metadata");
-
-  // Don't sync syncRoomKey through the shared workspace
-  if (property === "syncRoomKey") {
-    console.warn(
-      "Use updateWorkspaceSyncKey() instead of updateWorkspaceProperty() for syncRoomKey"
-    );
-    return updateWorkspaceSyncPeerId(workspaceKey, value);
-  }
-
-  metadataMap.set(property, value);
-}
-
 // Amount tracking functions
 export async function addAmountUpdate(
   workspaceKey: string,
   itemId: string,
   type: "set" | "delta",
   unit: string,
-  quantity: number
+  quantity: number,
 ) {
   const doc = await getWorkspaceDoc(workspaceKey);
   const objectsMap = doc.getMap("objects") as Y.Map<any>;
@@ -1185,7 +1163,7 @@ export async function getAmountUpdates(workspaceKey: string, itemId: string) {
 export async function deleteAmountUpdate(
   workspaceKey: string,
   itemId: string,
-  updateId: string
+  updateId: string,
 ) {
   const doc = await getWorkspaceDoc(workspaceKey);
   const objectsMap = doc.getMap("objects") as Y.Map<any>;
@@ -1208,7 +1186,7 @@ export async function updateAmountUpdate(
   workspaceKey: string,
   itemId: string,
   updateId: string,
-  changes: Partial<{ quantity: number; unit: string }>
+  changes: Partial<{ quantity: number; unit: string }>,
 ) {
   const doc = await getWorkspaceDoc(workspaceKey);
   const objectsMap = doc.getMap("objects") as Y.Map<any>;
@@ -1234,7 +1212,7 @@ export async function updateAmountUpdate(
 
 export async function calculateCurrentAmount(
   workspaceKey: string,
-  itemId: string
+  itemId: string,
 ) {
   try {
     const updates = await getAmountUpdates(workspaceKey, itemId);
@@ -1245,7 +1223,7 @@ export async function calculateCurrentAmount(
     // Sort by timestamp
     const sorted = [...updates].sort(
       (a, b) =>
-        new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+        new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime(),
     );
 
     // Find most recent 'set' entry
@@ -1277,7 +1255,7 @@ export async function calculateCurrentAmount(
           // Try to convert
           try {
             const converted = convert(update.quantity, update.unit as any).to(
-              baseUnit as any
+              baseUnit as any,
             ) as unknown as number;
             currentAmount += converted;
           } catch (e) {
@@ -1309,7 +1287,7 @@ export interface TagAlias {
 export async function addAlias(
   workspaceKey: string,
   aliasTagId: string,
-  destinationItemId: string
+  destinationItemId: string,
 ) {
   const doc = await getWorkspaceDoc(workspaceKey);
   const tagAliasesMap = doc.getMap("tagAliases") as Y.Map<any>;
@@ -1329,7 +1307,7 @@ export async function deleteAlias(workspaceKey: string, aliasTagId: string) {
 
 export async function getAliasesForItem(
   workspaceKey: string,
-  itemId: string
+  itemId: string,
 ): Promise<Array<TagAlias>> {
   const doc = await getWorkspaceDoc(workspaceKey);
   const tagAliasesMap = doc.getMap("tagAliases") as Y.Map<any>;
@@ -1351,7 +1329,7 @@ export async function getAliasesForItem(
 }
 
 export async function getAllAliases(
-  workspaceKey: string
+  workspaceKey: string,
 ): Promise<Map<string, Array<TagAlias>>> {
   const doc = await getWorkspaceDoc(workspaceKey);
   const tagAliasesMap = doc.getMap("tagAliases") as Y.Map<any>;
@@ -1380,7 +1358,7 @@ export async function updateLastScanned(
   workspaceKey: string,
   itemId: string,
   latitude?: number,
-  longitude?: number
+  longitude?: number,
 ) {
   const doc = await getWorkspaceDoc(workspaceKey);
   const objectsMap = doc.getMap("objects") as Y.Map<any>;
@@ -1404,21 +1382,23 @@ export async function updateLastScanned(
   }
 }
 
-function cloneToBuffer(bufferLike: Uint8Array<ArrayBufferLike>): Uint8Array<ArrayBuffer> {
+function cloneToBuffer(
+  bufferLike: Uint8Array<ArrayBufferLike>,
+): Uint8Array<ArrayBuffer> {
   // Create a view over the existing ArrayBufferLike
   const view = new Uint8Array(bufferLike);
-  
+
   // Create a fresh standard ArrayBuffer of the exact same size
   const targetBuffer = new ArrayBuffer(bufferLike.byteLength);
-  
+
   // Copy the bytes over
   new Uint8Array(targetBuffer).set(view);
-  
+
   return new Uint8Array(targetBuffer);
 }
 
 export async function exportWorkspaceState(
-  workspaceKey: string
+  workspaceKey: string,
 ): Promise<Uint8Array<ArrayBuffer>> {
   const doc = await getWorkspaceDoc(workspaceKey);
   return cloneToBuffer(Y.encodeStateAsUpdate(doc));
@@ -1427,7 +1407,9 @@ export async function exportWorkspaceState(
 /**
  * Get the size of the current state vector in bytes.
  */
-export async function getStateVectorSize(workspaceKey: string): Promise<number> {
+export async function getStateVectorSize(
+  workspaceKey: string,
+): Promise<number> {
   const doc = await getWorkspaceDoc(workspaceKey);
   return Y.encodeStateVector(doc).byteLength;
 }
@@ -1436,14 +1418,16 @@ export async function getStateVectorSize(workspaceKey: string): Promise<number> 
  * Get estimated database size by encoding the full state.
  * Note: This is an approximation; actual IndexedDB storage may differ.
  */
-export async function getEstimatedDbSize(workspaceKey: string): Promise<number> {
+export async function getEstimatedDbSize(
+  workspaceKey: string,
+): Promise<number> {
   const doc = await getWorkspaceDoc(workspaceKey);
   return Y.encodeStateAsUpdate(doc).byteLength;
 }
 
 export async function importWorkspaceState(
   workspaceKey: string,
-  update: Uint8Array
+  update: Uint8Array,
 ): Promise<void> {
   const doc = await getWorkspaceDoc(workspaceKey);
   Y.applyUpdate(doc, update, "import");
@@ -1451,7 +1435,7 @@ export async function importWorkspaceState(
 
 export function downloadWorkspaceFile(
   workspaceKey: string,
-  data: Uint8Array<ArrayBuffer>
+  data: Uint8Array<ArrayBuffer>,
 ): void {
   const metadata = workspaceRegistry.get(workspaceKey);
   const workspaceName = metadata?.name || "workspace";
@@ -1477,7 +1461,7 @@ export function downloadWorkspaceFile(
 // Category management functions
 export async function createCategory(
   workspaceKey: string,
-  categoryName: string
+  categoryName: string,
 ): Promise<string> {
   const doc = await getWorkspaceDoc(workspaceKey);
   const categoriesMap = doc.getMap("categories") as Y.Map<any>;
@@ -1492,7 +1476,7 @@ export async function createCategory(
 
 export async function deleteCategory(
   workspaceKey: string,
-  categoryId: string
+  categoryId: string,
 ): Promise<void> {
   const doc = await getWorkspaceDoc(workspaceKey);
   const categoriesMap = doc.getMap("categories") as Y.Map<any>;
@@ -1500,7 +1484,7 @@ export async function deleteCategory(
 }
 
 export async function getCategories(
-  workspaceKey: string
+  workspaceKey: string,
 ): Promise<Array<{ id: string; name: string }>> {
   const doc = await getWorkspaceDoc(workspaceKey);
   const categoriesMap = doc.getMap("categories") as Y.Map<any>;
@@ -1517,7 +1501,7 @@ export async function getCategories(
 export async function addItemToCategory(
   workspaceKey: string,
   categoryId: string,
-  itemId: string
+  itemId: string,
 ): Promise<void> {
   const doc = await getWorkspaceDoc(workspaceKey);
   const categoriesMap = doc.getMap("categories") as Y.Map<any>;
@@ -1538,7 +1522,7 @@ export async function addItemToCategory(
 export async function removeItemFromCategory(
   workspaceKey: string,
   categoryId: string,
-  itemId: string
+  itemId: string,
 ): Promise<void> {
   const doc = await getWorkspaceDoc(workspaceKey);
   const categoriesMap = doc.getMap("categories") as Y.Map<any>;
@@ -1554,7 +1538,7 @@ export async function removeItemFromCategory(
 
 export async function getItemCategories(
   workspaceKey: string,
-  itemId: string
+  itemId: string,
 ): Promise<Array<{ id: string; name: string }>> {
   const doc = await getWorkspaceDoc(workspaceKey);
   const categoriesMap = doc.getMap("categories") as Y.Map<any>;
@@ -1576,7 +1560,7 @@ export async function getItemCategories(
 
 export async function getCategoryItemsOverview(
   workspaceKey: string,
-  categoryId: string
+  categoryId: string,
 ) {
   const doc = await getWorkspaceDoc(workspaceKey);
   const categoriesMap = doc.getMap("categories") as Y.Map<any>;
@@ -1608,7 +1592,7 @@ export async function getCategoryItemsOverview(
           (item.inContainer &&
             ((await lookupItemName(
               workspaceKey,
-              item.inContainer
+              item.inContainer,
             )) as string)) ||
           undefined,
         type: item.type,
@@ -1622,7 +1606,7 @@ export async function getCategoryItemsOverview(
 }
 
 export async function getDefaultCategory(
-  workspaceKey: string
+  workspaceKey: string,
 ): Promise<string> {
   const doc = await getWorkspaceDoc(workspaceKey);
   const metadataMap = doc.getMap("metadata") as Y.Map<any>;
@@ -1631,7 +1615,7 @@ export async function getDefaultCategory(
 
 export async function setDefaultCategory(
   workspaceKey: string,
-  categoryId: string
+  categoryId: string,
 ): Promise<void> {
   const doc = await getWorkspaceDoc(workspaceKey);
   const metadataMap = doc.getMap("metadata") as Y.Map<any>;
@@ -1639,7 +1623,7 @@ export async function setDefaultCategory(
 }
 
 export async function getID12Disambiguator(
-  workspaceKey: string
+  workspaceKey: string,
 ): Promise<string> {
   const doc = await getWorkspaceDoc(workspaceKey);
   const metadataMap = doc.getMap("metadata") as Y.Map<any>;
@@ -1654,7 +1638,7 @@ export async function getID12Disambiguator(
 
 export async function setID12Disambiguator(
   workspaceKey: string,
-  code: string
+  code: string,
 ): Promise<void> {
   const normalized = code.trim().toUpperCase();
   if (!isValidID12Disambiguator(normalized)) {

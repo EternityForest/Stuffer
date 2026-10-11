@@ -20,7 +20,7 @@ import {
   migrateWorkspace,
   getStateVectorSize,
   getEstimatedDbSize,
-  updateWorkspaceSyncPeerId
+  
 } from "../services/storage.js";
 import {
   getWorkspaceLocalSettings,
@@ -28,7 +28,6 @@ import {
   getWorkspaceVersion,
 } from "../services/local-settings.js";
 import { isValidID12Disambiguator } from "../utils/id12.js";
-import jsQR from "jsqr";
 
 @customElement("workspace-settings")
 export class WorkspaceSettings extends LitElement {
@@ -113,9 +112,6 @@ export class WorkspaceSettings extends LitElement {
 
   private statusInterval: number | null = null;
   private boundScanSyncEvent: EventListener | null = null;
-  private videoElement: HTMLVideoElement | null = null;
-  private canvasElement: HTMLCanvasElement | null = null;
-  private scanningAnimation: number | null = null;
 
   constructor() {
     super();
@@ -169,7 +165,6 @@ export class WorkspaceSettings extends LitElement {
     if (this.boundScanSyncEvent) {
       globalThis.removeEventListener("globalTagScan", this.boundScanSyncEvent);
     }
-    this.stopScanningForSync();
   }
 
   private handleScanSyncEvent(event: Event) {
@@ -182,94 +177,6 @@ export class WorkspaceSettings extends LitElement {
 
     this.newsyncToPeer = peerId;
     this.showScanSync = false;
-  }
-
-  private startScanForSync() {
-    this.isScanningForSync = true;
-  }
-
-  private stopScanningForSync() {
-    if (this.videoElement && this.videoElement.srcObject) {
-      const tracks = (this.videoElement.srcObject as MediaStream).getTracks();
-      tracks.forEach((track) => track.stop());
-      this.videoElement.srcObject = null;
-    }
-
-    if (this.scanningAnimation) {
-      cancelAnimationFrame(this.scanningAnimation);
-      this.scanningAnimation = null;
-    }
-
-    this.isScanningForSync = false;
-  }
-
-  private async beginScanForSync() {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: "environment" },
-      });
-
-      this.videoElement = this.querySelector(
-        "#sync-camera-video",
-      ) as HTMLVideoElement;
-      this.canvasElement = this.querySelector(
-        "#sync-scan-canvas",
-      ) as HTMLCanvasElement;
-
-      if (this.videoElement) {
-        this.videoElement.srcObject = stream;
-
-        const playPromise = this.videoElement.play();
-        if (playPromise !== undefined) {
-          playPromise
-            .then(() => {
-              this.scanForSyncQR();
-            })
-            .catch((error) => {
-              console.error("Error playing video:", error);
-            });
-        } else {
-          this.scanForSyncQR();
-        }
-      }
-    } catch (error) {
-      console.error("Error accessing camera:", error);
-      this.stopScanningForSync();
-    }
-  }
-
-  private scanForSyncQR() {
-    if (!this.isScanningForSync || !this.videoElement || !this.canvasElement)
-      return;
-
-    const ctx = this.canvasElement.getContext("2d");
-    if (!ctx) return;
-
-    this.canvasElement.width = this.videoElement.videoWidth;
-    this.canvasElement.height = this.videoElement.videoHeight;
-
-    ctx.drawImage(this.videoElement, 0, 0);
-
-    const imageData = ctx.getImageData(
-      0,
-      0,
-      this.canvasElement.width,
-      this.canvasElement.height,
-    );
-    const code = jsQR(imageData.data, imageData.width, imageData.height);
-
-    if (code) {
-      this.syncToPeer = code.data;
-      updateWorkspaceSyncPeerId(this.workspaceKey, code.data).then(() => {
-        this.requestUpdate();
-      });
-
-      this.stopScanningForSync();
-    } else {
-      this.scanningAnimation = requestAnimationFrame(() =>
-        this.scanForSyncQR(),
-      );
-    }
   }
 
   private async loadWorkspaceData() {
@@ -707,54 +614,6 @@ export class WorkspaceSettings extends LitElement {
 
         <div class="section">
           <h3>Sync Configuration</h3>
-
-          <div class="form-group">
-            <label>Sync by Scanning Remote QR</label>
-            ${this.isScanningForSync
-              ? html`
-                  <div
-                    style="display: flex; flex-direction: column; gap: 1rem;"
-                  >
-                    <div
-                      id="sync-scan-container"
-                      style="position: relative; width: 100%; max-width: 400px; margin: 0 auto;"
-                    >
-                      <video
-                        id="sync-camera-video"
-                        autoplay
-                        playsinline
-                        style="width: 100%; height: auto; display: block; border: 2px solid #ddd; border-radius: 4px;"
-                      ></video>
-                      <canvas
-                        id="sync-scan-canvas"
-                        style="display: none;"
-                      ></canvas>
-                    </div>
-                    <button
-                      @click=${() => this.stopScanningForSync()}
-                      class="danger"
-                      style="width: 100%;"
-                    >
-                      Cancel Scan
-                    </button>
-                  </div>
-                `
-              : html`
-                  <button
-                    @click=${() => {
-                      this.startScanForSync();
-                      setTimeout(() => this.beginScanForSync(), 0);
-                    }}
-                    style="width: 100%; margin-top: 0.5rem;"
-                  >
-                    Scan Remote Peer QR Code
-                  </button>
-                  <div class="info">
-                    Scan a QR code from the remote peer's settings to auto-fill
-                    the sync ID
-                  </div>
-                `}
-          </div>
 
           <div class="form-group">
             <label>Sync Keys (P2PT)</label>
