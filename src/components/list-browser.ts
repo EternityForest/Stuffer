@@ -54,12 +54,19 @@ export class ListBrowser extends LitElement {
   @state()
   declare contentsFilter: string;
 
+  @state()
+  declare removableItem: { id: string; name: string } | null;
+
   private previousMode:
     | "add-to-contents"
     | "remove-from-contents"
     | "create-loadout"
     | "edit-loadout"
     | null = null;
+
+  // Incremented on every toast; guards against an older toast's timeout
+  // clearing the message/undo state of a newer one.
+  private toastToken = 0;
 
   constructor() {
     super();
@@ -73,6 +80,7 @@ export class ListBrowser extends LitElement {
     this.toastType = "success";
     this.contentsItems = [];
     this.contentsFilter = "";
+    this.removableItem = null;
   }
 
   updated(changedProperties: Map<string, any>) {
@@ -218,7 +226,19 @@ export class ListBrowser extends LitElement {
     return html`
       ${this.toastMessage
         ? html`
-            <div class="toast ${this.toastType}">${this.toastMessage}</div>
+            <div class="toast ${this.toastType}">
+              <span>${this.toastMessage}</span>
+              ${this.removableItem
+                ? html`
+                    <button
+                      class="toast-action"
+                      @click=${() => this.removeLastAdded()}
+                    >
+                      Remove
+                    </button>
+                  `
+                : ""}
+            </div>
           `
         : ""}
 
@@ -247,6 +267,9 @@ export class ListBrowser extends LitElement {
         workspaceKey="${this.workspaceKey}"
         buttonLabel="${buttonLabel}"
         .onlyShowLoadouts=${false}
+        .autostartScanning=${this.mode === "add-to-contents" ||
+        this.mode === "remove-from-contents"}
+        .showSelectionToast=${false}
         .callback=${this.getItemCallback()}
       ></item-selector>
     `;
@@ -254,11 +277,11 @@ export class ListBrowser extends LitElement {
 
   private getItemCallback() {
     if (this.mode === "add-to-contents") {
-      return (itemId: string, itemName: string) =>
-        this.addItemToContainer(itemId, itemName);
+      return (itemId: string, itemName: string, fromScan?: boolean) =>
+        this.addItemToContainer(itemId, itemName, fromScan);
     } else if (this.mode === "remove-from-contents") {
-      return (itemId: string, itemName: string) =>
-        this.addItemToContainer(itemId, itemName);
+      return (itemId: string, itemName: string, fromScan?: boolean) =>
+        this.addItemToContainer(itemId, itemName, fromScan);
     } else if (this.mode === "create-loadout") {
       return (itemId: string, itemName: string) =>
         this.addItemToNewLoadout(itemId, itemName);
@@ -267,15 +290,39 @@ export class ListBrowser extends LitElement {
     }
   }
 
-  private async addItemToContainer(itemId: string, itemName: string) {
+  private async addItemToContainer(
+    itemId: string,
+    itemName: string,
+    fromScan: boolean = false
+  ) {
     if (!this.workspaceKey || !this.containerId) return;
 
     try {
       await addItemToContents(this.workspaceKey, this.containerId, itemId);
-      this.showToast(`✓ Added ${itemName}`, "success");
+      const removable = fromScan || itemName === "Unknown";
+      this.removableItem = removable ? { id: itemId, name: itemName } : null;
+      this.showToast(`✓ Added ${itemName}`, "success", removable);
     } catch (error) {
       console.error("Failed to add item to container:", error);
       this.showToast("Failed to add item", "error");
+    }
+  }
+
+  private async removeLastAdded() {
+    const item = this.removableItem;
+    if (!item) return;
+    this.removableItem = null;
+
+    try {
+      await removeItemFromContents(
+        this.workspaceKey,
+        this.containerId,
+        item.id
+      );
+      this.showToast(`Removed ${item.name}`, "success");
+    } catch (error) {
+      console.error("Failed to remove item from container:", error);
+      this.showToast("Failed to remove item", "error");
     }
   }
 
@@ -408,12 +455,25 @@ export class ListBrowser extends LitElement {
     }
   }
 
-  private showToast(message: string, type: "success" | "error" = "success") {
+  private showToast(
+    message: string,
+    type: "success" | "error" = "success",
+    removable: boolean = false
+  ) {
     this.toastMessage = message;
     this.toastType = type;
+    if (!removable) {
+      this.removableItem = null;
+    }
+    const timeout = removable ? 6000 : 2500;
+    const token = ++this.toastToken;
     setTimeout(() => {
+      if (token !== this.toastToken) {
+        return;
+      }
       this.toastMessage = "";
-    }, 2500);
+      this.removableItem = null;
+    }, timeout);
   }
 }
 

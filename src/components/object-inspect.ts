@@ -126,15 +126,15 @@ export class ObjectInspect extends LitElement {
         detail: objectId,
         bubbles: true,
         composed: true,
-      })
+      }),
     );
   }
   private isContentRecordCurrent(
     record: ItemContentRecord,
-    container: ItemData
+    container: ItemData,
   ) {
     const checkDate = new Date(
-      container.needRecheckContentsAfter || "1/1/1970"
+      container.needRecheckContentsAfter || "1/1/1970",
     );
     const recordDate = new Date(record.checkedAt || "1/1/1970");
 
@@ -251,7 +251,7 @@ export class ObjectInspect extends LitElement {
       if (this.inContainer) {
         this.locationTitle = await lookupItemName(
           this.workspaceKey,
-          this.inContainer
+          this.inContainer,
         );
       }
       this.loadContents();
@@ -284,7 +284,7 @@ export class ObjectInspect extends LitElement {
     try {
       const comparison = await compareContentsToLoadout(
         this.workspaceKey,
-        this.objectId
+        this.objectId,
       );
       this.missingItems = comparison.missing;
       this.extraItems = comparison.extra;
@@ -312,7 +312,7 @@ export class ObjectInspect extends LitElement {
         this.workspaceKey,
         this.objectId,
         "title",
-        input.value
+        input.value,
       );
     } catch (error) {
       console.error("Failed to save title:", error);
@@ -327,7 +327,7 @@ export class ObjectInspect extends LitElement {
         this.workspaceKey,
         this.objectId,
         "description",
-        textarea.value
+        textarea.value,
       );
     } catch (error) {
       console.error("Failed to save description:", error);
@@ -347,7 +347,7 @@ export class ObjectInspect extends LitElement {
         this.workspaceKey,
         this.objectId,
         "imageData",
-        compressedDataUrl
+        compressedDataUrl,
       );
     } catch (error) {
       console.error("Failed to compress and save image:", error);
@@ -362,12 +362,12 @@ export class ObjectInspect extends LitElement {
     try {
       this.amountUpdates = await getAmountUpdates(
         this.workspaceKey,
-        this.objectId
+        this.objectId,
       );
       calculateCurrentAmount(this.workspaceKey, this.objectId).then(
         (amount) => {
           this.currentAmount = amount;
-        }
+        },
       );
     } catch (error) {
       console.error("Failed to load amount data:", error);
@@ -383,7 +383,7 @@ export class ObjectInspect extends LitElement {
       this.categories = await getCategories(this.workspaceKey);
       this.itemCategories = await getItemCategories(
         this.workspaceKey,
-        this.objectId
+        this.objectId,
       );
     } catch (error) {
       console.error("Failed to load categories:", error);
@@ -400,7 +400,7 @@ export class ObjectInspect extends LitElement {
         await removeItemFromCategory(
           this.workspaceKey,
           categoryId,
-          this.objectId
+          this.objectId,
         );
       }
       await this.loadCategories();
@@ -429,7 +429,7 @@ export class ObjectInspect extends LitElement {
         this.objectId,
         "delta",
         unit,
-        quantity
+        quantity,
       );
       this.loadAmountData();
     } catch (error) {
@@ -468,7 +468,7 @@ export class ObjectInspect extends LitElement {
 
     const quantityStr = prompt(
       "Enter new quantity:",
-      update.quantity.toString()
+      update.quantity.toString(),
     );
     if (quantityStr === null) return;
     const quantity = parseFloat(quantityStr);
@@ -511,7 +511,11 @@ export class ObjectInspect extends LitElement {
   render() {
     return html`
       <div class="tool-bar">
-        <h2>Object Details</h2>
+        <h2>${this.title}</h2>
+        <button @click=${() => this.addContents()}>Add Contents</button>
+        <button @click=${() => this.removeContents()}>
+                Remove Contents
+        </button>
         <button @click=${() => this.openAliasEditor()}>
           Manage Aliases
         </button>
@@ -536,13 +540,18 @@ export class ObjectInspect extends LitElement {
       ${
         this.showLoadoutSelector
           ? html`
-              <div style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 1000;">
-                <div style="background: white; padding: 1rem; border-radius: 8px; max-width: 90%; max-height: 90%; overflow: auto; max-width: 500px;">
+              <div
+                style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 1000;"
+              >
+                <div
+                  style="background: white; padding: 1rem; border-radius: 8px; max-width: 90%; max-height: 90%; overflow: auto; max-width: 500px;"
+                >
                   <item-selector
                     workspaceKey="${this.workspaceKey}"
                     buttonLabel="Select"
                     .onlyShowLoadouts=${true}
-                    .callback=${(loadoutId: string) => this.selectLoadoutFromSelector(loadoutId)}
+                    .callback=${(loadoutId: string) =>
+                      this.selectLoadoutFromSelector(loadoutId)}
                   ></item-selector>
                   <div class="tool-bar" style="margin-top: 1rem;">
                     <button @click=${() => (this.showLoadoutSelector = false)}>
@@ -602,7 +611,7 @@ export class ObjectInspect extends LitElement {
           /></label>
         </div>
           <div class="tool-bar">
-            <label>Loadout: ${this.selectedLoadout ? (this.loadouts.find(l => l.id === this.selectedLoadout)?.title || 'Unknown') : 'None'}</label>
+            <label>Loadout: ${this.selectedLoadout ? this.loadouts.find((l) => l.id === this.selectedLoadout)?.title || "Unknown" : "None"}</label>
             <button @click=${() => (this.showLoadoutSelector = true)}>
               Set Loadout
             </button>
@@ -689,7 +698,7 @@ export class ObjectInspect extends LitElement {
                             </button>
                           </div>
                         </div>
-                      `
+                      `,
                     )}
                   `
                 : html`
@@ -720,7 +729,7 @@ export class ObjectInspect extends LitElement {
                     <a href="geo:${this.lastScannedLocation}" target="_blank">
                       ${this.lastScannedLocation} at
                       ${new Date(
-                        this.lastScannedTimestamp || 0
+                        this.lastScannedTimestamp || 0,
                       ).toLocaleString()}
                     </a>
                   </div>
@@ -744,19 +753,19 @@ export class ObjectInspect extends LitElement {
                             <input
                               type="checkbox"
                               ?checked=${this.itemCategories.some(
-                                (ic) => ic.id === cat.id
+                                (ic) => ic.id === cat.id,
                               )}
                               @change=${(e: Event) =>
                                 this.handleCategoryToggle(
                                   cat.id,
-                                  (e.target as HTMLInputElement).checked
+                                  (e.target as HTMLInputElement).checked,
                                 )}
                             />
                             <span style="margin-left: 0.5rem;"
                               >${cat.name}</span
                             >
                           </label>
-                        `
+                        `,
                       )}
                     `
                   : html`
@@ -802,7 +811,7 @@ export class ObjectInspect extends LitElement {
                                     <div>
                                       ${item.name} (qty: ${item.quantity})
                                     </div>
-                                  `
+                                  `,
                                 )}
                               </div>
                             </div>
@@ -822,7 +831,7 @@ export class ObjectInspect extends LitElement {
                                     <div>
                                       ${item.name} (qty: ${item.quantity})
                                     </div>
-                                  `
+                                  `,
                                 )}
                               </div>
                             </div>
@@ -846,8 +855,8 @@ export class ObjectInspect extends LitElement {
                         const className = isMissing
                           ? "warning"
                           : isExtra
-                          ? "extra"
-                          : "";
+                            ? "extra"
+                            : "";
                         return html`
                           <div class="content-item ${className}">
                             <span class="content-item-name"
@@ -858,7 +867,7 @@ export class ObjectInspect extends LitElement {
                             <small
                               >Checked at
                               ${new Date(
-                                content.checkedAt || "1/1/1970"
+                                content.checkedAt || "1/1/1970",
                               ).toLocaleString()}</small
                             >
 
@@ -886,7 +895,7 @@ export class ObjectInspect extends LitElement {
         detail: { screen: "workspace-browser" },
         bubbles: true,
         composed: true,
-      })
+      }),
     );
   }
 
@@ -904,7 +913,7 @@ export class ObjectInspect extends LitElement {
         },
         bubbles: true,
         composed: true,
-      })
+      }),
     );
   }
 
@@ -922,7 +931,7 @@ export class ObjectInspect extends LitElement {
         },
         bubbles: true,
         composed: true,
-      })
+      }),
     );
   }
 
@@ -935,7 +944,7 @@ export class ObjectInspect extends LitElement {
         this.workspaceKey,
         this.objectId,
         "selectedLoadout",
-        loadoutId
+        loadoutId,
       );
       this.selectedLoadout = loadoutId;
       this.checkLoadoutMismatch();
@@ -983,7 +992,7 @@ export class ObjectInspect extends LitElement {
         this.workspaceKey,
         this.objectId,
         "selectedLoadout",
-        loadoutId
+        loadoutId,
       );
       this.selectedLoadout = loadoutId;
       this.checkLoadoutMismatch();
@@ -998,7 +1007,7 @@ export class ObjectInspect extends LitElement {
         this.workspaceKey,
         this.objectId,
         "selectedLoadout",
-        null
+        null,
       );
       this.selectedLoadout = null;
       this.missingItems = [];
@@ -1014,7 +1023,7 @@ export class ObjectInspect extends LitElement {
         this.workspaceKey,
         this.objectId,
         "needRecheckContentsAfter",
-        new Date().toISOString()
+        new Date().toISOString(),
       );
     }
   }

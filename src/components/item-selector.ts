@@ -11,8 +11,20 @@ import {
   updateLastScanned,
 } from "../services/storage.js";
 import jsQR from "jsqr";
+import { scanFrameForCode } from "../services/ocr-scanner.js";
+import {
+  applyTorch,
+  getVideoTrack,
+  isFlashEnabled,
+  setFlashEnabled,
+  trackSupportsTorch,
+} from "../services/scanner-flash.js";
 
-export type ItemSelectorCallback = (itemId: string, itemName: string) => void;
+export type ItemSelectorCallback = (
+  itemId: string,
+  itemName: string,
+  fromScan?: boolean
+) => void;
 
 @customElement("item-selector")
 export class ItemSelector extends LitElement {
@@ -35,6 +47,12 @@ export class ItemSelector extends LitElement {
   @property()
   declare callback: ItemSelectorCallback | null;
 
+  @property({ type: Boolean })
+  declare autostartScanning: boolean;
+
+  @property({ type: Boolean })
+  declare showSelectionToast: boolean;
+
   @state()
   declare items: Array<{ id: string; name: string }>;
 
@@ -46,6 +64,12 @@ export class ItemSelector extends LitElement {
 
   @state()
   declare toastType: "success" | "error";
+
+  @state()
+  declare torchSupported: boolean;
+
+  @state()
+  declare flashOn: boolean;
 
   @state()
   declare categories: Array<{ id: string; name: string }>;
@@ -70,10 +94,14 @@ export class ItemSelector extends LitElement {
     this.onlyShowLoadouts = false;
     this.excludeLoadouts = false;
     this.callback = null;
+    this.autostartScanning = false;
+    this.showSelectionToast = true;
     this.items = [];
     this.isScanning = false;
     this.toastMessage = "";
     this.toastType = "success";
+    this.torchSupported = false;
+    this.flashOn = false;
     this.categories = [];
     this.selectedCategory = "all";
     this.searchQuery = "";
@@ -96,6 +124,12 @@ export class ItemSelector extends LitElement {
       this
     ) as typeof this.boundGlobalTagScan;
     globalThis.addEventListener("globalTagScan", this.boundGlobalTagScan);
+  }
+
+  firstUpdated() {
+    if (this.autostartScanning && !this.isScanning) {
+      this.startScanning();
+    }
   }
 
   globalTagScan(event: CustomEvent<{ qrData: string }>) {
@@ -208,6 +242,13 @@ export class ItemSelector extends LitElement {
         <button @click=${() => this.toggleScanning()}>
           ${this.isScanning ? "Stop Scan" : "Scan QR"}
         </button>
+        ${this.isScanning && this.torchSupported
+          ? html`
+              <button @click=${() => this.toggleFlash()}>
+                ${this.flashOn ? "Flash Off" : "Flash On"}
+              </button>
+            `
+          : ""}
       </div>
 
       ${!this.onlyShowLoadouts && this.categories.length > 0
@@ -291,10 +332,16 @@ export class ItemSelector extends LitElement {
     `;
   }
 
-  private async selectItem(itemId: string, itemName: string) {
+  private async selectItem(
+    itemId: string,
+    itemName: string,
+    fromScan: boolean = false
+  ) {
     if (this.callback) {
-      this.callback(itemId, itemName);
-      this.showToast(`✓ Selected ${itemName}`, "success");
+      this.callback(itemId, itemName, fromScan);
+      if (this.showSelectionToast) {
+        this.showToast(`✓ Selected ${itemName}`, "success");
+      }
     }
   }
 
@@ -313,16 +360,24 @@ export class ItemSelector extends LitElement {
       });
 
       this.isScanning = true;
-      this.requestUpdate();
+      await this.updateComplete;
 
-      setTimeout(() => {
-        this.videoElement = this.querySelector("#qr-video") as HTMLVideoElement;
-        if (this.videoElement) {
-          this.videoElement.srcObject = stream;
-          this.videoElement.play();
-          this.startQRScanning();
-        }
-      }, 0);
+      this.videoElement = this.querySelector("#qr-video") as HTMLVideoElement;
+      if (!this.videoElement) {
+        return;
+      }
+
+      this.videoElement.srcObject = stream;
+      this.videoElement.play();
+
+      const track = stream.getVideoTracks()[0] ?? null;
+      this.torchSupported = trackSupportsTorch(track);
+      this.flashOn = this.torchSupported && isFlashEnabled();
+      if (track && this.flashOn) {
+        await applyTorch(track, true);
+      }
+
+      this.startQRScanning();
     } catch (error) {
       this.showToast(`Camera access denied: ${error}`, "error");
       this.isScanning = false;
@@ -331,6 +386,7 @@ export class ItemSelector extends LitElement {
 
   private stopScanning() {
     this.isScanning = false;
+    this.torchSupported = false;
     if (this.videoElement?.srcObject) {
       const tracks = (this.videoElement.srcObject as MediaStream).getTracks();
       tracks.forEach((track) => track.stop());
@@ -339,6 +395,23 @@ export class ItemSelector extends LitElement {
     if (this.scanningInterval !== null) {
       cancelAnimationFrame(this.scanningInterval);
       this.scanningInterval = null;
+    }
+  }
+
+  private async toggleFlash() {
+    const track = getVideoTrack(this.videoElement);
+    if (!track) {
+      return;
+    }
+
+    const next = !this.flashOn;
+    try {
+      await applyTorch(track, next);
+      this.flashOn = next;
+      setFlashEnabled(next);
+    } catch (error) {
+      console.error("Failed to toggle flash:", error);
+      this.showToast("Could not toggle flash", "error");
     }
   }
 
@@ -353,6 +426,12 @@ export class ItemSelector extends LitElement {
         canvas.width = this.videoElement.videoWidth;
         canvas.height = this.videoElement.videoHeight;
         ctx.drawImage(this.videoElement, 0, 0);
+
+        // Parallel OCR: recognized printed labels route through the QR handler.
+        scanFrameForCode(this.videoElement, (scanned, confidence) => {
+          if (confidence < 0.92) return;
+          if (this.isScanning) this.handleQRScan(scanned);
+        });
 
         const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
         const code = jsQR(imageData.data, canvas.width, canvas.height);
@@ -390,7 +469,7 @@ export class ItemSelector extends LitElement {
         updateLastScanned(this.workspaceKey, qrData, 0, 0);
       }
 
-      this.selectItem(resolvedId, itemName);
+      this.selectItem(resolvedId, itemName, true);
 
       if (this.isScanning && this.videoElement) {
         this.startQRScanning();

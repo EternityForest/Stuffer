@@ -2,6 +2,10 @@ import * as Y from "yjs";
 import { IndexeddbPersistence } from "y-indexeddb";
 import { generateItemId } from "./uuid.js";
 import {
+  generateID12Disambiguator,
+  isValidID12Disambiguator,
+} from "../utils/id12.js";
+import {
   setWorkspaceLocalSettingKey,
   getWorkspaceLocalSettings,
   getSyncKeys,
@@ -1624,4 +1628,32 @@ export async function setDefaultCategory(
   const doc = await getWorkspaceDoc(workspaceKey);
   const metadataMap = doc.getMap("metadata") as Y.Map<any>;
   metadataMap.set("defaultCategory", categoryId);
+}
+
+export async function getID12Disambiguator(
+  workspaceKey: string
+): Promise<string> {
+  const doc = await getWorkspaceDoc(workspaceKey);
+  const metadataMap = doc.getMap("metadata") as Y.Map<any>;
+  const existing = metadataMap.get("id12Disambiguator") as string | undefined;
+  if (existing) return existing;
+
+  // Nothing chosen yet: assign a random code so labels stay consistent.
+  const generated = generateID12Disambiguator();
+  metadataMap.set("id12Disambiguator", generated);
+  return generated;
+}
+
+export async function setID12Disambiguator(
+  workspaceKey: string,
+  code: string
+): Promise<void> {
+  const normalized = code.trim().toUpperCase();
+  if (!isValidID12Disambiguator(normalized)) {
+    throw new Error("ID12 Disambiguator must be exactly 3 uppercase letters");
+  }
+
+  const doc = await getWorkspaceDoc(workspaceKey);
+  const metadataMap = doc.getMap("metadata") as Y.Map<any>;
+  metadataMap.set("id12Disambiguator", normalized);
 }

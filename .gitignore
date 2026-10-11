@@ -1,7 +1,11 @@
 node_modules/
 dist/
+public/ort/
 .vscode/
 .DS_Store
 *.log
 .env
 .env.local
+/.aider-desk
+__pycache__
+/.aider.input.history

@@ -13,6 +13,8 @@ import {
   getCategories,
   getDefaultCategory,
   setDefaultCategory,
+  getID12Disambiguator,
+  setID12Disambiguator,
   addWorkspaceSyncKey,
   removeWorkspaceSyncKey,
   migrateWorkspace,
@@ -24,6 +26,7 @@ import {
   getSyncKeys,
   getWorkspaceVersion,
 } from "../services/local-settings.js";
+import { isValidID12Disambiguator } from "../utils/id12.js";
 import jsQR from "jsqr";
 
 @customElement("workspace-settings")
@@ -81,6 +84,12 @@ export class WorkspaceSettings extends LitElement {
   declare defaultCategory: string;
 
   @state()
+  declare id12Disambiguator: string;
+
+  @state()
+  declare id12Saved: boolean;
+
+  @state()
   declare showScanSync: boolean;
 
   @state()
@@ -126,6 +135,8 @@ export class WorkspaceSettings extends LitElement {
     this.newCategoryName = "";
     this.showCategoryForm = false;
     this.defaultCategory = "all";
+    this.id12Disambiguator = "";
+    this.id12Saved = false;
     this.showScanSync = false;
     this.isScanningForSync = false;
     this.newSyncKeyInput = "";
@@ -140,6 +151,7 @@ export class WorkspaceSettings extends LitElement {
     await this.loadWorkspaceData();
     await this.loadCategories();
     await this.loadDefaultCategory();
+    await this.loadID12Disambiguator();
     this.startStatusPolling();
 
     // Listen for scanned sync peer ID
@@ -304,6 +316,45 @@ export class WorkspaceSettings extends LitElement {
     } catch (error) {
       console.error("Failed to load default category:", error);
       this.defaultCategory = "all";
+    }
+  }
+
+  private async loadID12Disambiguator() {
+    if (!this.workspaceKey) return;
+
+    try {
+      this.id12Disambiguator = await getID12Disambiguator(this.workspaceKey);
+    } catch (error) {
+      console.error("Failed to load ID12 Disambiguator:", error);
+    }
+  }
+
+  private handleID12Input(value: string) {
+    this.id12Disambiguator = value
+      .toUpperCase()
+      .replace(/[^A-Z]/g, "")
+      .slice(0, 3);
+    this.id12Saved = false;
+  }
+
+  private async handleSaveID12Disambiguator() {
+    const code = this.id12Disambiguator.trim().toUpperCase();
+    if (!isValidID12Disambiguator(code)) {
+      this.error = "ID12 Disambiguator must be exactly 3 uppercase letters";
+      return;
+    }
+
+    try {
+      await setID12Disambiguator(this.workspaceKey, code);
+      this.id12Disambiguator = code;
+      this.error = null;
+      this.id12Saved = true;
+      setTimeout(() => {
+        this.id12Saved = false;
+      }, 2000);
+    } catch (error) {
+      console.error("Failed to save ID12 Disambiguator:", error);
+      this.error = "Failed to save ID12 Disambiguator";
     }
   }
 
@@ -649,6 +700,35 @@ export class WorkspaceSettings extends LitElement {
               <span class="status-label">Database Version:</span>
               <span class="status-value">${this.dbVersion.toString()}</span>
             </div>
+          <h3>ID12 Disambiguator</h3>
+          <div class="form-group">
+            <label>ID12 Disambiguator (3 uppercase letters)</label>
+            <div style="display: flex; gap: 0.5rem;">
+              <input
+                type="text"
+                maxlength="3"
+                .value=${this.id12Disambiguator}
+                @input=${(e: Event) =>
+                  this.handleID12Input((e.target as HTMLInputElement).value)}
+                style="flex: 1; text-transform: uppercase; font-family: monospace; letter-spacing: 0.2em;"
+              />
+              <button
+                @click=${() => this.handleSaveID12Disambiguator()}
+                style="white-space: nowrap;"
+              >
+                Save
+              </button>
+            </div>
+            <div class="info">
+              Randomized by default; random codes never use the letters I, O or
+              V. It forms the middle part of ID12 label codes, e.g.
+              <span style="font-family: monospace;"
+                >1234${this.id12Disambiguator || "ABC"}-0001</span
+              >.
+            </div>
+            ${this.id12Saved
+              ? html`<div class="info" style="color: #155724;">Saved</div>`
+              : ""}
           </div>
         </div>
 
