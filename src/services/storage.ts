@@ -655,13 +655,13 @@ const p2ptRetryStateByWorkspace = new Map<string, { lastRetryCount: number }>();
  */
 export async function enableWebRTC(
   workspaceKey: string,
-  signalingServers: string[] = DEFAULT_TRACKERS
+  signalingServers: string[] = DEFAULT_TRACKERS,
 ) {
   const doc = await getWorkspaceDoc(workspaceKey);
 
-  // Disconnect any existing provider
   if (p2ptProviders.has(workspaceKey)) {
-    disconnectWebRTC(workspaceKey);
+    console.log(`Already connected to P2PT for workspace ${workspaceKey}`);
+    return;
   }
 
   try {
