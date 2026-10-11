@@ -622,54 +622,6 @@ export class WorkspaceSettings extends LitElement {
           <h3>Sync Configuration</h3>
 
           <div class="form-group">
-            <label>Sync by Scanning Remote QR</label>
-            ${this.isScanningForSync
-              ? html`
-                  <div
-                    style="display: flex; flex-direction: column; gap: 1rem;"
-                  >
-                    <div
-                      id="sync-scan-container"
-                      style="position: relative; width: 100%; max-width: 400px; margin: 0 auto;"
-                    >
-                      <video
-                        id="sync-camera-video"
-                        autoplay
-                        playsinline
-                        style="width: 100%; height: auto; display: block; border: 2px solid #ddd; border-radius: 4px;"
-                      ></video>
-                      <canvas
-                        id="sync-scan-canvas"
-                        style="display: none;"
-                      ></canvas>
-                    </div>
-                    <button
-                      @click=${() => this.stopScanningForSync()}
-                      class="danger"
-                      style="width: 100%;"
-                    >
-                      Cancel Scan
-                    </button>
-                  </div>
-                `
-              : html`
-                  <button
-                    @click=${() => {
-                      this.startScanForSync();
-                      setTimeout(() => this.beginScanForSync(), 0);
-                    }}
-                    style="width: 100%; margin-top: 0.5rem;"
-                  >
-                    Scan Remote Peer QR Code
-                  </button>
-                  <div class="info">
-                    Scan a QR code from the remote peer's settings to auto-fill
-                    the sync ID
-                  </div>
-                `}
-          </div>
-
-          <div class="form-group">
             <label>Sync Keys (P2PT)</label>
             <div class="info">
               Share these keys with peers to sync. Anyone with a key can join.
