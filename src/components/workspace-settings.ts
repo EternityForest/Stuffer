@@ -1,4 +1,4 @@
-import { LitElement, html, css } from "lit";
+import { LitElement, html } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import {
   getWorkspaceSyncedMetadata,
@@ -20,6 +20,7 @@ import {
   migrateWorkspace,
   getStateVectorSize,
   getEstimatedDbSize,
+  updateWorkspaceSyncPeerId
 } from "../services/storage.js";
 import {
   getWorkspaceLocalSettings,
@@ -111,7 +112,6 @@ export class WorkspaceSettings extends LitElement {
   declare dbVersion: bigint;
 
   private statusInterval: number | null = null;
-  private fileInput: HTMLInputElement | null = null;
   private boundScanSyncEvent: EventListener | null = null;
   private videoElement: HTMLVideoElement | null = null;
   private canvasElement: HTMLCanvasElement | null = null;
@@ -432,33 +432,6 @@ export class WorkspaceSettings extends LitElement {
     } catch (error) {
       console.error("Failed to add sync key:", error);
       this.error = "Failed to add sync key";
-    }
-  }
-
-  private startEditsyncToPeer() {
-    this.editingsyncToPeer = true;
-    this.newsyncToPeer = this.syncToPeer;
-  }
-
-  private cancelEditsyncToPeer() {
-    this.editingsyncToPeer = false;
-    this.newsyncToPeer = this.syncToPeer;
-  }
-
-  private async updateSyncRemoteKey() {
-    if (this.newsyncToPeer === this.syncToPeer) {
-      this.editingsyncToPeer = false;
-      return;
-    }
-
-    try {
-      await updateWorkspaceSyncPeerId(this.workspaceKey, this.newsyncToPeer);
-      this.syncToPeer = this.newsyncToPeer;
-      this.editingsyncToPeer = false;
-      this.error = null;
-    } catch (error) {
-      console.error("Failed to update sync key:", error);
-      this.error = "Failed to update sync key";
     }
   }
 

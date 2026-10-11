@@ -109,7 +109,8 @@ export class AppShell extends LitElement {
             | "add-to-contents"
             | "remove-from-contents"
             | "create-loadout"
-            | "edit-loadout") || "create-loadout"}
+            | "edit-loadout"
+            | "set-location") || "create-loadout"}
           @navigate=${this.onNavigate}
         ></list-browser>`;
       case "loadouts-manager":

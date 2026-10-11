@@ -1,4 +1,4 @@
-import { LitElement, html, css } from 'lit';
+import { LitElement, html } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
 import { initializeYDoc, getWorkspacesMap, createWorkspace, deleteWorkspace } from '../services/storage.js';
 import { enableWebRTC } from '../services/storage.js';
