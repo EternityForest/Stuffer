@@ -6,8 +6,6 @@ import {
   isValidID12Disambiguator,
 } from "../utils/id12.js";
 import {
-  setWorkspaceLocalSettingKey,
-  getWorkspaceLocalSettings,
   getSyncKeys,
   addSyncKey,
   removeSyncKey,
@@ -27,14 +25,6 @@ const workspaceDocs = new Map<string, Y.Doc>();
 const workspacePersistence = new Map<string, IndexeddbPersistence>();
 let initPromise: Promise<void> | null = null;
 
-// Per-workspace peer instance
-const peerInstances = new Map<string, Peer>();
-
-// Per-workspace connections: Map of remote peer ID → DataConnection
-const peerConnections = new Map<string, Map<string, DataConnection>>();
-
-// Track connected peers per workspace
-const connectedPeers = new Map<string, Set<string>>();
 
 // Registry key for localStorage
 const REGISTRY_KEY = "stuffer:workspace-registry";
@@ -691,7 +681,7 @@ export async function enableWebRTC(
 
     // Schedule retry with exponential backoff
     scheduleP2PTRetry(workspaceKey);
-    throw error;
+    throw new Error(errorMsg);
   }
 }
 
@@ -1190,11 +1180,24 @@ export async function updateLastScanned(
   }
 }
 
+function cloneToBuffer(bufferLike: Uint8Array<ArrayBufferLike>): Uint8Array<ArrayBuffer> {
+  // Create a view over the existing ArrayBufferLike
+  const view = new Uint8Array(bufferLike);
+  
+  // Create a fresh standard ArrayBuffer of the exact same size
+  const targetBuffer = new ArrayBuffer(bufferLike.byteLength);
+  
+  // Copy the bytes over
+  new Uint8Array(targetBuffer).set(view);
+  
+  return new Uint8Array(targetBuffer);
+}
+
 export async function exportWorkspaceState(
   workspaceKey: string
-): Promise<Uint8Array> {
+): Promise<Uint8Array<ArrayBuffer>> {
   const doc = await getWorkspaceDoc(workspaceKey);
-  return Y.encodeStateAsUpdate(doc);
+  return cloneToBuffer(Y.encodeStateAsUpdate(doc));
 }
 
 export async function importWorkspaceState(
@@ -1207,7 +1210,7 @@ export async function importWorkspaceState(
 
 export function downloadWorkspaceFile(
   workspaceKey: string,
-  data: Uint8Array
+  data: Uint8Array<ArrayBuffer>
 ): void {
   const metadata = workspaceRegistry.get(workspaceKey);
   const workspaceName = metadata?.name || "workspace";
