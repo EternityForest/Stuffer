@@ -46,7 +46,7 @@ MSG_VERSION = 0x07
 # Default WebTorrent tracker URLs
 DEFAULT_TRACKERS = [
     "wss://tracker.openwebtorrent.com",
-    "wss://tracker.btorrent.xyz:443/",
+    "wss://tracker.webtorrent.dev:443"
 ]
 
 # Validation timeout in milliseconds

@@ -7,6 +7,9 @@ scan QR codes or ID12 OCR codes to quickly add and remove.
 
 There is no backend, the entire app runs in the browser.
 
+Note: Some browsers or wireless networks don't seem to be syncing
+when on the same WiFi, but syncing between mobile and wifi works.
+
 ### ID12 Codes
 
 These are any code of the form 9999ABC-0001 and work anywhere a QR does,

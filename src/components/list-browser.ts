@@ -11,6 +11,7 @@ import {
   getItem,
   saveObjectAsLoadout,
   updateLastScanned,
+  sortItemsForDisplay,
 } from "../services/storage.js";
 import "./item-selector.js";
 import "./nfc-toggle-button.js";
@@ -51,7 +52,7 @@ export class ListBrowser extends LitElement {
   declare toastType: "success" | "error";
 
   @state()
-  declare contentsItems: Array<{ id: string; name: string }>;
+  declare contentsItems: Array<{ id: string; name: string; modified?: number }>;
 
   @state()
   declare contentsFilter: string;
@@ -117,8 +118,10 @@ export class ListBrowser extends LitElement {
 
   private getFilteredContents() {
     const filter = this.contentsFilter.toLowerCase();
-    return this.contentsItems.filter((item) =>
-      item.name.toLowerCase().includes(filter)
+    return sortItemsForDisplay(
+      this.contentsItems.filter((item) =>
+        item.name.toLowerCase().includes(filter)
+      )
     );
   }
 

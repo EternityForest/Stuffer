@@ -8,6 +8,9 @@ import {
   getCategoryItemsOverview,
   getDefaultCategory,
   createLoadout,
+  sortItemsForDisplay,
+  getWebRTCStatus,
+  enableWebRTC,
 } from "../services/storage.js";
 import "./nfc-toggle-button.js";
 
@@ -60,11 +63,16 @@ export class WorkspaceBrowser extends LitElement {
     this.loadItems();
     this.loadCategories();
     this.setupYjsListener();
+    this.startStatusPolling();
   }
 
   disconnectedCallback() {
     super.disconnectedCallback();
     this.cleanupYjsListener();
+    if (this.statusInterval !== null) {
+      window.clearInterval(this.statusInterval);
+      this.statusInterval = null;
+    }
   }
 
   private navigateToScanner() {
@@ -113,12 +121,16 @@ export class WorkspaceBrowser extends LitElement {
     }
     try {
       if (this.selectedCategory !== "all" && (this.searchQuery.length == 0)) {
-        this.objects = await getCategoryItemsOverview(
-          this.workspaceKey,
-          this.selectedCategory
+        this.objects = sortItemsForDisplay(
+          await getCategoryItemsOverview(
+            this.workspaceKey,
+            this.selectedCategory
+          )
         );
       } else {
-        this.objects = await getItemsOverview(this.workspaceKey);
+        this.objects = sortItemsForDisplay(
+          await getItemsOverview(this.workspaceKey)
+        );
       }
       this.workspaceName = (await getWorkspacesMap()).get(this.workspaceKey)
         ?.name as string;
@@ -171,6 +183,10 @@ export class WorkspaceBrowser extends LitElement {
             this.searchQuery = (e.target as HTMLInputElement).value;
           }}
         />
+        <button class="status" @click=${async () => await enableWebRTC(this.workspaceKey)}>Sync:
+          ${this.connected ? "On" : "Off"}
+          ${this.peerCount > 0 ? ` (${this.peerCount} peers)` : ""}
+        </button>
         <button @click=${() => this.addItem()}>Add Item</button>
         <button @click=${() => this.navigateToScanner()}>Scanner</button>
         <nfc-toggle-button></nfc-toggle-button>
@@ -238,6 +254,35 @@ export class WorkspaceBrowser extends LitElement {
       </div>
     `;
   }
+
+
+    @state()
+    declare connected: boolean;
+
+    @state()
+    declare peerCount: number;
+
+    private statusInterval: number | null = null;
+
+
+    private startStatusPolling() {
+      this.updateStatus();
+      this.statusInterval = window.setInterval(() => {
+        this.updateStatus();
+      }, 2000);
+    }
+  
+    private updateStatus() {
+      if (!this.workspaceKey) return;
+  
+      try {
+        const status = getWebRTCStatus(this.workspaceKey);
+        this.connected = status.connected;
+        this.peerCount = status.peers;
+      } catch (error) {
+        console.error("Failed to update WebRTC status:", error);
+      }
+    }
 
   private addItem() {
     this.dispatchEvent(

@@ -9,6 +9,7 @@ import {
   lookupItemName,
   resolveItemId,
   updateLastScanned,
+  sortItemsForDisplay,
 } from "../services/storage.js";
 import jsQR from "jsqr";
 import { scanFrameForCode } from "../services/ocr-scanner.js";
@@ -57,7 +58,7 @@ export class ItemSelector extends LitElement {
   declare showSelectionToast: boolean;
 
   @state()
-  declare items: Array<{ id: string; name: string }>;
+  declare items: Array<{ id: string; name: string; modified?: number }>;
 
   @state()
   declare isScanning: boolean;
@@ -194,13 +195,17 @@ export class ItemSelector extends LitElement {
 
       // Filter for loadouts if requested
       if (this.onlyShowLoadouts) {
-        this.items = allItems.filter((item) => item.type === "loadout");
+        this.items = sortItemsForDisplay(
+          allItems.filter((item) => item.type === "loadout")
+        );
       } else if (this.excludeLoadouts) {
         // Show only normal items, exclude loadouts
-        this.items = allItems.filter((item) => item.type !== "loadout");
+        this.items = sortItemsForDisplay(
+          allItems.filter((item) => item.type !== "loadout")
+        );
       } else {
         // Show all items when not filtering
-        this.items = allItems;
+        this.items = sortItemsForDisplay(allItems);
       }
     } catch (error) {
       console.error("Failed to load items:", error);

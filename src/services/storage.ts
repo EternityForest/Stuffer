@@ -188,6 +188,18 @@ export async function addItem(
   return itemId;
 }
 
+// Display order for item lists: reverse insertion order (newest inserted
+// first), then stable-sort by `modified` descending so the most recently
+// added/changed items appear at the top. Missing `modified` is treated as 0
+// and therefore retains the reversed insertion order at the bottom.
+export function sortItemsForDisplay<T extends { modified?: number }>(
+  items: T[]
+): T[] {
+  return [...items]
+    .reverse()
+    .sort((a, b) => (b.modified ?? 0) - (a.modified ?? 0));
+}
+
 export async function getItemsOverview(workspaceKey: string) {
   const doc = await getWorkspaceDoc(workspaceKey);
   const objectsMap = doc.getMap("objects") as Y.Map<any>;
@@ -195,6 +207,7 @@ export async function getItemsOverview(workspaceKey: string) {
     id: string;
     name: string;
     createdAt: string;
+    modified?: number;
     inContainer?: string;
     type: "normal" | "loadout";
   }> = [];
@@ -204,6 +217,7 @@ export async function getItemsOverview(workspaceKey: string) {
       id,
       name: item.get("title") as string,
       createdAt: item.get("createdAt") as string,
+      modified: item.get("modified") as number | undefined,
       inContainer:
         item.get("inContainer") &&
         ((await lookupItemName(
@@ -250,6 +264,7 @@ export interface ItemData {
   title: string;
   description: string;
   createdAt: string;
+  modified?: number;
   imageData: string | null;
   selectedLoadout: string | null;
   inContainer: string | null;
@@ -297,6 +312,7 @@ export async function getItem(
     title: item.get("title") as string,
     description: item.get("description") as string,
     createdAt: item.get("createdAt") as string,
+    modified: item.get("modified") as number | undefined,
     imageData: item.get("imageData") as string | null,
     selectedLoadout: item.get("selectedLoadout") as string | null,
     inContainer: item.get("inContainer") || ("" as string),
@@ -328,6 +344,7 @@ export interface ItemContentRecord {
   id: string;
   name: string;
   checkedAt: string | null;
+  modified?: number;
 }
 export async function getItemContents(
   workspaceKey: string,
@@ -356,6 +373,7 @@ export async function getItemContents(
           id,
           name: await lookupItemName(workspaceKey, id),
           checkedAt: contentsMap.get(id).get("checkedAt") as string,
+          modified: foundItem.modified,
         });
       }
     } catch (e) {
@@ -895,9 +913,9 @@ export async function enableWebRTC(
 ) {
   const doc = await getWorkspaceDoc(workspaceKey);
 
-  // Disconnect any existing provider
   if (p2ptProviders.has(workspaceKey)) {
-    disconnectWebRTC(workspaceKey);
+    console.log(`Already connected to P2PT for workspace ${workspaceKey}`);
+    return;
   }
 
   try {
@@ -1576,6 +1594,7 @@ export async function getCategoryItemsOverview(
     id: string;
     name: string;
     createdAt: string;
+    modified?: number;
     inContainer?: string;
     type: "normal" | "loadout";
   }> = [];
@@ -1588,6 +1607,7 @@ export async function getCategoryItemsOverview(
         id,
         name: item.title as string,
         createdAt: item.createdAt as string,
+        modified: item.modified,
         inContainer:
           (item.inContainer &&
             ((await lookupItemName(
