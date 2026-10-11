@@ -722,6 +722,12 @@ export class ObjectInspect extends LitElement {
               : html`<p>Not in Container</p>`
           }
 
+          <div class="tool-bar">
+            <button @click=${() => this.setLocation()}>
+              Set Location
+            </button>
+          </div>
+
           ${
             this.lastScannedLocation
               ? html`
@@ -927,6 +933,25 @@ export class ObjectInspect extends LitElement {
             containerId: this.objectId,
             workspaceKey: this.workspaceKey,
             mode: "remove-from-contents",
+          },
+        },
+        bubbles: true,
+        composed: true,
+      }),
+    );
+  }
+
+  private setLocation() {
+    // Navigate to list-browser to pick the container this item lives in.
+    // The selected item becomes this item's location (contents/inContainer).
+    this.dispatchEvent(
+      new CustomEvent("navigate", {
+        detail: {
+          screen: "list-browser",
+          context: {
+            containerId: this.objectId,
+            workspaceKey: this.workspaceKey,
+            mode: "set-location",
           },
         },
         bubbles: true,

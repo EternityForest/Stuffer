@@ -10,6 +10,7 @@ import {
   lookupItemName,
   getItem,
   saveObjectAsLoadout,
+  updateLastScanned,
 } from "../services/storage.js";
 import "./item-selector.js";
 import "./nfc-toggle-button.js";
@@ -34,7 +35,8 @@ export class ListBrowser extends LitElement {
     | "add-to-contents"
     | "remove-from-contents"
     | "create-loadout"
-    | "edit-loadout";
+    | "edit-loadout"
+    | "set-location";
 
   @state()
   declare selectingContainer: boolean;
@@ -62,6 +64,7 @@ export class ListBrowser extends LitElement {
     | "remove-from-contents"
     | "create-loadout"
     | "edit-loadout"
+    | "set-location"
     | null = null;
 
   // Incremented on every toast; guards against an older toast's timeout
@@ -143,6 +146,48 @@ export class ListBrowser extends LitElement {
             Cancel
           </button>
         </div>
+      `;
+    }
+
+    // For set-location mode, pick the container this item should live in.
+    if (this.mode === "set-location") {
+      return html`
+        ${this.toastMessage
+          ? html`
+              <div class="toast ${this.toastType}">
+                <span>${this.toastMessage}</span>
+                ${this.removableItem
+                  ? html`
+                      <button
+                        class="toast-action"
+                        @click=${() => this.removeLastAdded()}
+                      >
+                        Undo
+                      </button>
+                    `
+                  : ""}
+              </div>
+            `
+          : ""}
+
+        <div class="tool-bar">
+          <h2>Set Location</h2>
+          <div>
+            <strong>Item:</strong> ${this.containerName}
+          </div>
+          <button @click=${() => this.goBack()}>Back</button>
+        </div>
+
+        <item-selector
+          workspaceKey="${this.workspaceKey}"
+          buttonLabel="Set Location"
+          .onlyShowLoadouts=${false}
+          .excludeItemId=${this.containerId}
+          .autostartScanning=${true}
+          .showSelectionToast=${false}
+          .callback=${(itemId: string, itemName: string, fromScan?: boolean) =>
+            this.setLocation(itemId, itemName, fromScan)}
+        ></item-selector>
       `;
     }
 
@@ -314,15 +359,67 @@ export class ListBrowser extends LitElement {
     this.removableItem = null;
 
     try {
-      await removeItemFromContents(
-        this.workspaceKey,
-        this.containerId,
-        item.id
-      );
+      if (this.mode === "set-location") {
+        // Undo sets the inspected item (containerId) out of the selected item.
+        await removeItemFromContents(
+          this.workspaceKey,
+          item.id,
+          this.containerId
+        );
+      } else {
+        await removeItemFromContents(
+          this.workspaceKey,
+          this.containerId,
+          item.id
+        );
+      }
       this.showToast(`Removed ${item.name}`, "success");
     } catch (error) {
       console.error("Failed to remove item from container:", error);
       this.showToast("Failed to remove item", "error");
+    }
+  }
+
+  private async setLocation(
+    targetId: string,
+    targetName: string,
+    fromScan: boolean = false
+  ) {
+    if (!this.workspaceKey || !this.containerId) return;
+
+    try {
+      // Put the item being inspected into the selected item's contents,
+      // which sets the inspected item's location (inContainer).
+      await addItemToContents(this.workspaceKey, targetId, this.containerId);
+      // Mirror the normal add-items flow: GPS is recorded on the selected item.
+      // Scans are already handled by item-selector, so only do it for clicks.
+      if (!fromScan) {
+        this.updateLocationCoords(targetId);
+      }
+      this.removableItem = { id: targetId, name: targetName };
+      this.showToast(`✓ Location set to ${targetName}`, "success", true);
+    } catch (error) {
+      console.error("Failed to set location:", error);
+      this.showToast("Failed to set location", "error");
+    }
+  }
+
+  private updateLocationCoords(itemId: string) {
+    if (!this.workspaceKey) return;
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          updateLastScanned(
+            this.workspaceKey,
+            itemId,
+            position.coords.latitude,
+            position.coords.longitude
+          );
+        },
+        (error) => console.error(error)
+      );
+    } else {
+      updateLastScanned(this.workspaceKey, itemId, 0, 0);
     }
   }
 

@@ -45,6 +45,9 @@ export class ItemSelector extends LitElement {
   declare excludeLoadouts: boolean;
 
   @property()
+  declare excludeItemId: string;
+
+  @property()
   declare callback: ItemSelectorCallback | null;
 
   @property({ type: Boolean })
@@ -93,6 +96,7 @@ export class ItemSelector extends LitElement {
     this.buttonLabel = "Select";
     this.onlyShowLoadouts = false;
     this.excludeLoadouts = false;
+    this.excludeItemId = "";
     this.callback = null;
     this.autostartScanning = false;
     this.showSelectionToast = true;
@@ -225,8 +229,10 @@ export class ItemSelector extends LitElement {
       this.loadItems();
     }
 
-    const filteredItems = this.items.filter((obj) =>
-      obj.name.toLowerCase().includes(this.searchQuery.toLowerCase())
+    const filteredItems = this.items.filter(
+      (obj) =>
+        obj.id !== this.excludeItemId &&
+        obj.name.toLowerCase().includes(this.searchQuery.toLowerCase())
     );
 
     return html`
