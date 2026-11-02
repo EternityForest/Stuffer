@@ -346,6 +346,22 @@ export class ListBrowser extends LitElement {
     if (!this.workspaceKey || !this.containerId) return;
 
     try {
+      try {
+        await getItem(this.workspaceKey, itemId);
+      } catch {
+        this.showToast("Unknown item, not adding", "error");
+        return;
+      }
+
+      const contents = await getItemContents(
+        this.workspaceKey,
+        this.containerId
+      );
+      if (contents.some((content) => content.id === itemId)) {
+        this.showToast("Item already in list", "error");
+        return;
+      }
+
       await addItemToContents(this.workspaceKey, this.containerId, itemId);
       const removable = fromScan || itemName === "Unknown";
       this.removableItem = removable ? { id: itemId, name: itemName } : null;
