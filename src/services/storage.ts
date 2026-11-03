@@ -213,6 +213,7 @@ export async function getItemsOverview(workspaceKey: string) {
     createdAt: string;
     modified?: number;
     inContainer?: string;
+    needRecheckContentsAfter?: string | null;
     type: "normal" | "loadout";
   }> = [];
 
@@ -228,6 +229,9 @@ export async function getItemsOverview(workspaceKey: string) {
           workspaceKey,
           item.get("inContainer")
         )) as string),
+      needRecheckContentsAfter: item.get("needRecheckContentsAfter") as
+        | string
+        | null,
       type: (item.get("type") as "normal" | "loadout") || "normal",
     });
   }
@@ -413,6 +417,26 @@ export async function addItemToContents(
   container.set("modified", Math.floor(Date.now()/1000))
   contentsMap.set(itemId, content);
   updateItemProperty(workspaceKey, itemId, "inContainer", containerId);
+}
+
+// Mark an item that is already in a container as freshly inventoried by
+// resetting its `checkedAt` timestamp.
+export async function markContentInventoried(
+  workspaceKey: string,
+  containerId: string,
+  itemId: string
+) {
+  const doc = await getWorkspaceDoc(workspaceKey);
+  const objectsMap = doc.getMap("objects") as Y.Map<any>;
+  const container = objectsMap.get(containerId) as Y.Map<any>;
+  if (!container) throw new Error("Container not found");
+
+  const contentsMap = container.get("contents") as Y.Map<any>;
+  const content = contentsMap?.get(itemId) as Y.Map<any> | undefined;
+  if (!content) throw new Error("Item not in container");
+
+  content.set("checkedAt", new Date().toISOString());
+  container.set("modified", Math.floor(Date.now()/1000));
 }
 
 export async function removeItemFromContents(

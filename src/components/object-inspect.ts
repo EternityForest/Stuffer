@@ -880,7 +880,7 @@ export class ObjectInspect extends LitElement {
                             ${this.item &&
                             !this.isContentRecordCurrent(content, this.item)
                               ? html`
-                                  <p class="warning">Need to reinventory</p>
+                                  <small class="warning">Need reinventory</small>
                                 `
                               : html``}
                           </div>

@@ -6,6 +6,8 @@ import {
   getCategories,
   getCategoryItemsOverview,
   getWorkspaceDoc as getWorkspaceDocExported,
+  getItem,
+  getItemContents,
   lookupItemName,
   resolveItemId,
   updateLastScanned,
@@ -48,6 +50,13 @@ export class ItemSelector extends LitElement {
   @property()
   declare excludeItemId: string;
 
+  // When set, items that are already in this container are surfaced at the
+  // top of the list: those that need reinventory (checked before the
+  // container's `needRecheckContentsAfter`) get class "warning", the rest get
+  // class "success".
+  @property()
+  declare containerId: string;
+
   @property()
   declare callback: ItemSelectorCallback | null;
 
@@ -85,6 +94,7 @@ export class ItemSelector extends LitElement {
   declare searchQuery: string;
 
   private prevSearchQuery = "";
+  private reinventoryStatus = new Map<string, "warning" | "success">();
   private videoElement: HTMLVideoElement | null = null;
   private scanningInterval: number | null = null;
   private boundGlobalTagScan: (event: Event) => void = () => {};
@@ -98,6 +108,7 @@ export class ItemSelector extends LitElement {
     this.onlyShowLoadouts = false;
     this.excludeLoadouts = false;
     this.excludeItemId = "";
+    this.containerId = "";
     this.callback = null;
     this.autostartScanning = false;
     this.showSelectionToast = true;
@@ -170,6 +181,7 @@ export class ItemSelector extends LitElement {
     if (
       changedProperties.has("workspaceKey") ||
       changedProperties.has("onlyShowLoadouts") ||
+      changedProperties.has("containerId") ||
       changedProperties.has("selectedCategory")
     ) {
       this.loadItems();
@@ -194,23 +206,73 @@ export class ItemSelector extends LitElement {
       }
 
       // Filter for loadouts if requested
+      let items;
       if (this.onlyShowLoadouts) {
-        this.items = sortItemsForDisplay(
+        items = sortItemsForDisplay(
           allItems.filter((item) => item.type === "loadout")
         );
       } else if (this.excludeLoadouts) {
         // Show only normal items, exclude loadouts
-        this.items = sortItemsForDisplay(
+        items = sortItemsForDisplay(
           allItems.filter((item) => item.type !== "loadout")
         );
       } else {
         // Show all items when not filtering
-        this.items = sortItemsForDisplay(allItems);
+        items = sortItemsForDisplay(allItems);
       }
+
+      await this.loadContainerStatus();
+      this.items = items;
     } catch (error) {
       console.error("Failed to load items:", error);
       this.items = [];
+      this.reinventoryStatus = new Map();
     }
+  }
+
+  // Determine which of this container's contents need reinventory so they can
+  // be surfaced/highlighted in the list.
+  private async loadContainerStatus() {
+    this.reinventoryStatus = new Map();
+    if (!this.workspaceKey || !this.containerId) return;
+
+    try {
+      const container = await getItem(this.workspaceKey, this.containerId);
+      const contents = await getItemContents(
+        this.workspaceKey,
+        this.containerId
+      );
+      const checkDate = new Date(
+        container.needRecheckContentsAfter || "1/1/1970"
+      );
+
+      for (const record of contents) {
+        const recordDate = new Date(record.checkedAt || "1/1/1970");
+        const needsRecheck = checkDate.getTime() > recordDate.getTime();
+        this.reinventoryStatus.set(
+          record.id,
+          needsRecheck ? "warning" : "success"
+        );
+      }
+    } catch (error) {
+      console.error("Failed to load container status:", error);
+      this.reinventoryStatus = new Map();
+    }
+  }
+
+  // Stable-partition into: items needing reinventory ("warning"), then items
+  // already in the container ("success"), then everything else.
+  private sortByContainerStatus<
+    T extends { id: string }
+  >(items: T[]): T[] {
+    if (this.reinventoryStatus.size === 0) return items;
+    const rank = (id: string) =>
+      this.reinventoryStatus.get(id) === "warning"
+        ? 0
+        : this.reinventoryStatus.get(id) === "success"
+          ? 1
+          : 2;
+    return [...items].sort((a, b) => rank(a.id) - rank(b.id));
   }
 
   private async loadCategories() {
@@ -234,10 +296,12 @@ export class ItemSelector extends LitElement {
       this.loadItems();
     }
 
-    const filteredItems = this.items.filter(
-      (obj) =>
-        obj.id !== this.excludeItemId &&
-        obj.name.toLowerCase().includes(this.searchQuery.toLowerCase())
+    const filteredItems = this.sortByContainerStatus(
+      this.items.filter(
+        (obj) =>
+          obj.id !== this.excludeItemId &&
+          obj.name.toLowerCase().includes(this.searchQuery.toLowerCase())
+      )
     );
 
     return html`
@@ -315,7 +379,7 @@ export class ItemSelector extends LitElement {
             <div class="flex-row gaps padding">
               ${filteredItems.map(
                 (item) => html`
-                  <div class="card">
+                  <div class="card ${this.reinventoryStatus.get(item.id) ?? ""}">
                     <div class="item-info">
                       <div class="item-name">${item.name}</div>
                     </div>

@@ -4,6 +4,7 @@ import {
   getItemContents,
   addItemToContents,
   removeItemFromContents,
+  markContentInventoried,
   getLoadout,
   addItemToLoadout,
   removeItemFromLoadout,
@@ -315,6 +316,7 @@ export class ListBrowser extends LitElement {
         workspaceKey="${this.workspaceKey}"
         buttonLabel="${buttonLabel}"
         .onlyShowLoadouts=${false}
+        .containerId=${this.mode === "add-to-contents" ? this.containerId : ""}
         .autostartScanning=${this.mode === "add-to-contents" ||
         this.mode === "remove-from-contents"}
         .showSelectionToast=${false}
@@ -358,7 +360,17 @@ export class ListBrowser extends LitElement {
         this.containerId
       );
       if (contents.some((content) => content.id === itemId)) {
-        this.showToast("Item already in list", "error");
+        // Already in the container: mark it inventoried instead of erroring.
+        await markContentInventoried(
+          this.workspaceKey,
+          this.containerId,
+          itemId
+        );
+        if (fromScan) {
+          this.updateLocationCoords(itemId);
+        }
+        this.removableItem = null;
+        this.showToast(`✓ Reinventoried ${itemName}`, "success");
         return;
       }
 
